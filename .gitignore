@@ -1,0 +1,56 @@
+# Ambientes Virtuais & Cache do Python
+.venv/
+venv/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node.js & Dependências (Backend e Frontend)
+node_modules/
+dist/
+build/
+.npm/
+
+# Arquivos de Variáveis de Ambiente & Logs
+.env
+.env.local
+*.log
+npm-debug.log*
+
+# Mídia de Testes, Uploads e Vídeos Processados
+backend/uploads/*
+!backend/uploads/.gitkeep
+motorIA/*.mp4
+motorIA/resultado_*.mp4
+*.mp4
+*.avi
+
+# Configurações do Sistema / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local

@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id        String   @id @default(uuid())
+  nome      String
+  email     String   @unique
+  telefone  String   @default("(16) 99876-5432")
+  idade     Int
+  senhaHash String
+  
+  fazenda   Fazenda? 
+}
+
+model Fazenda {
+  id          String   @id @default(uuid())
+  nome        String
+  localizacao String
+  
+  usuarioId   String   @unique
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+  
+  lotes       Lote[]
+}
+
+model Lote {
+  id                  String   @id @default(uuid())
+  quantidadeCabecas   Int
+  videoOriginalUrl    String?
+  videoProcessadoUrl  String?
+  status              String   @default("AUDITADO") 
+  
+  fazendaId           String
+  fazenda             Fazenda  @relation(fields: [fazendaId], references: [id])
+  
+  createdAt           DateTime @default(now())
+}
+
+model Consumidor {
+  id        String   @id @default(uuid())
+  nome      String
+  email     String   @unique
+  empresa   String   // Ex: Frigorífico Minerva, Friboi, Rede de Açougues
+  senhaHash String
+  
+  createdAt DateTime @default(now())
+}
