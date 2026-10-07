@@ -1,48 +1,85 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, Mail, User, Calendar, Building2, MapPin, ArrowLeft, Loader2 } from 'lucide-react';
-import { api } from '../services/api';
+import { 
+  Eye, 
+  EyeOff, 
+  Lock, 
+  Mail, 
+  User, 
+  Calendar, 
+  Building2, 
+  MapPin, 
+  ArrowLeft, 
+  Loader2, 
+  Maximize2, 
+  Hash, 
+  AlertCircle 
+} from 'lucide-react';
+import { api } from '../../services/api';
+import { useFarm, type AreaUnit } from '../../context/FarmContext';
 
 interface RegisterProps {
   onRegisterSuccess: () => void;
   onNavigateLogin: () => void;
 }
 
-export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) {
-  // Campos do Usuario
+export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: RegisterProps) {
+  const { setUserSession } = useFarm();
+
+  // 1. Dados Pessoais do Usuário
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [idade, setIdade] = useState<number | ''>('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Campos da Fazenda (Relação no Prisma)
+  // 2. Dados da Fazenda do Produtor
   const [nomeFazenda, setNomeFazenda] = useState('');
   const [localizacao, setLocalizacao] = useState('');
+  const [capacidadeGado, setCapacidadeGado] = useState<number | ''>('');
+  const [areaValue, setAreaValue] = useState<number | ''>('');
+  const [areaUnit, setAreaUnit] = useState<AreaUnit>('ha');
 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.SubmitEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro(null);
     setLoading(true);
 
     try {
-      // Envia requisição alinhada com os campos do modelo Prisma
-      await api.post('/api/usuarios/registrar', {
+      const payload = {
         nome,
         email,
         idade: Number(idade),
         senha,
         nomeFazenda,
         localizacao,
+        capacidadeGado: Number(capacidadeGado) || 0,
+        areaValue: Number(areaValue) || 0,
+        areaUnit
+      };
+
+      // Envia requisição real ao backend
+      const response = await api.post('/api/usuarios/registrar', payload);
+
+      // Atualiza a sessão global da plataforma com as informações reais cadastradas
+      setUserSession({
+        nome,
+        fazenda: {
+          id: response.data?.fazendaId || `farm-${Date.now()}`,
+          nome: nomeFazenda,
+          localizacao,
+          capacidadeGado: Number(capacidadeGado) || 0,
+          areaValue: Number(areaValue) || 0,
+          areaUnit
+        }
       });
 
-      // Sucesso: Redireciona para o login ou diretamente para o Dashboard
       onRegisterSuccess();
     } catch (err: any) {
-      console.error(err);
-      setErro(err.response?.data?.erro || 'Erro ao realizar cadastro. Tente novamente.');
+      console.error('Erro de cadastro:', err);
+      setErro(err.response?.data?.erro || err.response?.data?.mensagem || 'Erro ao realizar cadastro. Verifique os dados e tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -50,9 +87,9 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
 
   return (
     <div className="min-h-screen w-full bg-[linear-gradient(225deg,#b8c7dd_0%,#cdd0ca_50%,#e7d8b6_100%)] flex items-center justify-center p-6 font-sans">
-      <div className="w-full max-w-xl bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/60 relative">
+      <div className="w-full max-w-2xl bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/60 relative my-8">
         
-        {/* Botão de Voltar para o Login */}
+        {/* Botão de Voltar */}
         <button
           type="button"
           onClick={onNavigateLogin}
@@ -64,26 +101,28 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
 
         {/* Cabeçalho */}
         <div className="flex flex-col items-center mb-6 text-center pt-4">
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Criar Nova Conta</h1>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Criar Conta de Produtor</h1>
+          <p className="text-xs text-slate-500 font-semibold mt-1">Cadastre seus dados e registre sua propriedade rural</p>
         </div>
 
         {/* Alerta de Erro */}
         {erro && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-700 text-xs rounded-xl text-center font-medium">
-            {erro}
+          <div className="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-medium">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{erro}</span>
           </div>
         )}
 
         {/* Formulário */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           
+          {/* SEÇÃO 1: DADOS DO USUÁRIO */}
           <div className="space-y-3">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md inline-block">
-              1. Dados do Usuário
+              1. Informações Pessoais
             </span>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Nome */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Nome Completo</label>
                 <div className="relative">
@@ -91,7 +130,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                     type="text"
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
-                    placeholder="Ex.: Carlos Alberto"
+                    placeholder="Ex.: Sebastião Ribeiro"
                     required
                     className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                   />
@@ -99,7 +138,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                 </div>
               </div>
 
-              {/* Idade */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Idade</label>
                 <div className="relative">
@@ -107,7 +145,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                     type="number"
                     value={idade}
                     onChange={(e) => setIdade(e.target.value ? Number(e.target.value) : '')}
-                    placeholder="Ex.: 28"
+                    placeholder="Ex.: 45"
                     min="18"
                     required
                     className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
@@ -118,7 +156,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* E-mail */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">E-mail</label>
                 <div className="relative">
@@ -126,7 +163,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seu@email.com"
+                    placeholder="seu.email@fazenda.com.br"
                     required
                     className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                   />
@@ -134,7 +171,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                 </div>
               </div>
 
-              {/* Senha */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Senha</label>
                 <div className="relative">
@@ -159,10 +195,10 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
             </div>
           </div>
 
-          {/* SECÇÃO 2: DADOS DA FAZENDA */}
+          {/* SEÇÃO 2: DADOS DA FAZENDA */}
           <div className="space-y-3 pt-2">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md inline-block">
-              2. Dados da Propriedade (Fazenda)
+              2. Cadastro da Propriedade Rural
             </span>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -190,7 +226,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                     type="text"
                     value={localizacao}
                     onChange={(e) => setLocalizacao(e.target.value)}
-                    placeholder="Ex.: Ribeirão Preto - SP"
+                    placeholder="Ex.: Itu - SP"
                     required
                     className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                   />
@@ -198,9 +234,60 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                 </div>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+              {/* Capacidade de Gado */}
+              <div className="md:col-span-6">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Capacidade de Gado</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    value={capacidadeGado}
+                    onChange={(e) => setCapacidadeGado(e.target.value ? Number(e.target.value) : '')}
+                    placeholder="Ex.: 250"
+                    required
+                    className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                  <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              {/* Área da Fazenda */}
+              <div className="md:col-span-4">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Área da Propriedade</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    value={areaValue}
+                    onChange={(e) => setAreaValue(e.target.value ? Number(e.target.value) : '')}
+                    placeholder="Ex.: 150"
+                    required
+                    className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                  <Maximize2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              {/* Unidade de Medida */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Unidade</label>
+                <select
+                  value={areaUnit}
+                  onChange={(e) => setAreaUnit(e.target.value as AreaUnit)}
+                  className="w-full px-2 py-2.5 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 text-xs font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="ha">ha</option>
+                  <option value="m²">m²</option>
+                  <option value="alq">alq</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          {/* Botão de Submissão */}
+          {/* Botão de Finalizar */}
           <button
             type="submit"
             disabled={loading}
@@ -209,17 +296,17 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                <span>Cadastrando...</span>
+                <span>Cadastrando Usuário e Fazenda...</span>
               </>
             ) : (
-              <span>Finalizar Cadastro</span>
+              <span>Finalizar Cadastro e Acessar Plataforma</span>
             )}
           </button>
         </form>
 
         {/* Rodapé */}
         <div className="mt-5 text-center text-xs text-slate-500 font-medium">
-          Já possui conta?{' '}
+          Já possui uma conta?{' '}
           <button
             type="button"
             onClick={onNavigateLogin}

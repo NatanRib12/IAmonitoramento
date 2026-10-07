@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Building2, Eye, EyeOff, Lock, Mail, User, ArrowLeft, Loader2 } from 'lucide-react';
-import { api } from '../services/api';
+import { api } from '../../services/api';
 
 interface ConsumerRegisterProps {
   onRegisterSuccess: () => void;
