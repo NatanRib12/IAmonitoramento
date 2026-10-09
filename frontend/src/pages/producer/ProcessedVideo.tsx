@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { 
   Search, 
-  Calendar, 
-  Filter, 
   X, 
   Trash2, 
   Pencil, 
@@ -10,8 +8,7 @@ import {
   Play, 
   Bell, 
   Radio, 
-  ShieldCheck, 
-  Loader2 
+  ShieldCheck
 } from 'lucide-react';
 import { useVideoProcessing, type AnalyzedVideoItem } from '../../context/VideoProcessing';
 

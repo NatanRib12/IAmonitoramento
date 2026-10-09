@@ -25,14 +25,12 @@ interface RegisterProps {
 export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: RegisterProps) {
   const { setUserSession } = useFarm();
 
-  // 1. Dados Pessoais do Usuário
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [idade, setIdade] = useState<number | ''>('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // 2. Dados da Fazenda do Produtor
   const [nomeFazenda, setNomeFazenda] = useState('');
   const [localizacao, setLocalizacao] = useState('');
   const [capacidadeGado, setCapacidadeGado] = useState<number | ''>('');
@@ -60,14 +58,16 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
         areaUnit
       };
 
-      // Envia requisição real ao backend
       const response = await api.post('/api/usuarios/registrar', payload);
 
-      // Atualiza a sessão global da plataforma com as informações reais cadastradas
+      const realUserId = response.data?.usuarioId || response.data?.usuario?.id;
+
+      // Passa o ID retornado pelo registro para salvar a sessão corretamente
       setUserSession({
+        id: realUserId,
         nome,
         fazenda: {
-          id: response.data?.fazendaId || `farm-${Date.now()}`,
+          id: response.data?.fazendas?.[0]?.id || response.data?.fazendaId || `farm-${Date.now()}`,
           nome: nomeFazenda,
           localizacao,
           capacidadeGado: Number(capacidadeGado) || 0,
@@ -89,7 +89,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
     <div className="min-h-screen w-full bg-[linear-gradient(225deg,#b8c7dd_0%,#cdd0ca_50%,#e7d8b6_100%)] flex items-center justify-center p-6 font-sans">
       <div className="w-full max-w-2xl bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/60 relative my-8">
         
-        {/* Botão de Voltar */}
         <button
           type="button"
           onClick={onNavigateLogin}
@@ -99,13 +98,11 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
           <span>Voltar ao Login</span>
         </button>
 
-        {/* Cabeçalho */}
         <div className="flex flex-col items-center mb-6 text-center pt-4">
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Criar Conta de Produtor</h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">Cadastre seus dados e registre sua propriedade rural</p>
         </div>
 
-        {/* Alerta de Erro */}
         {erro && (
           <div className="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-medium">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -113,10 +110,7 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
           </div>
         )}
 
-        {/* Formulário */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* SEÇÃO 1: DADOS DO USUÁRIO */}
           <div className="space-y-3">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md inline-block">
               1. Informações Pessoais
@@ -195,14 +189,12 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
             </div>
           </div>
 
-          {/* SEÇÃO 2: DADOS DA FAZENDA */}
           <div className="space-y-3 pt-2">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md inline-block">
               2. Cadastro da Propriedade Rural
             </span>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Nome da Fazenda */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Nome da Fazenda</label>
                 <div className="relative">
@@ -218,7 +210,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
                 </div>
               </div>
 
-              {/* Localização */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Localização (Cidade - UF)</label>
                 <div className="relative">
@@ -236,7 +227,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-              {/* Capacidade de Gado */}
               <div className="md:col-span-6">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Capacidade de Gado</label>
                 <div className="relative">
@@ -253,7 +243,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
                 </div>
               </div>
 
-              {/* Área da Fazenda */}
               <div className="md:col-span-4">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Área da Propriedade</label>
                 <div className="relative">
@@ -271,7 +260,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
                 </div>
               </div>
 
-              {/* Unidade de Medida */}
               <div className="md:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Unidade</label>
                 <select
@@ -287,7 +275,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
             </div>
           </div>
 
-          {/* Botão de Finalizar */}
           <button
             type="submit"
             disabled={loading}
@@ -304,7 +291,6 @@ export function ProducerRegister({ onRegisterSuccess, onNavigateLogin }: Registe
           </button>
         </form>
 
-        {/* Rodapé */}
         <div className="mt-5 text-center text-xs text-slate-500 font-medium">
           Já possui uma conta?{' '}
           <button

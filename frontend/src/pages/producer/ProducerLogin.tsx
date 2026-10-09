@@ -26,7 +26,6 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
     setLoading(true);
 
     try {
-      // Comunicação real com o banco de dados via Axios
       const response = await api.post('/api/usuarios/login', {
         email,
         senha: password
@@ -35,8 +34,9 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
       if (response.data?.sucesso || response.data?.usuario) {
         const usuarioBD = response.data.usuario || response.data;
         
-        // Sincroniza usuário e suas fazendas com o contexto da plataforma
+        // Passa explicitamente o ID do usuário para o Contexto e LocalStorage
         setUserSession({
+          id: usuarioBD.id,
           nome: usuarioBD.nome,
           fazenda: usuarioBD.fazenda,
           fazendas: usuarioBD.fazendas
@@ -62,7 +62,6 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
     <div className="min-h-screen w-full bg-[linear-gradient(225deg,#b8c7dd_0%,#cdd0ca_50%,#e7d8b6_100%)] flex items-center justify-center p-6 font-sans">
       <div className="w-full max-w-md bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/60 relative">
         
-        {/* Botão de Voltar para a Landing Page */}
         {onNavigateLanding && (
           <button
             type="button"
@@ -75,13 +74,11 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
           </button>
         )}
 
-        {/* Cabeçalho */}
         <div className="flex flex-col items-center mb-6 text-center pt-2">
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Login do Produtor</h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">Acesse sua conta para gerenciar suas fazendas</p>
         </div>
 
-        {/* Alerta de Erro de Autenticação */}
         {erro && (
           <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-start gap-2.5 font-medium animate-fade-in">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -89,10 +86,7 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
           </div>
         )}
 
-        {/* Formulário */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          
-          {/* Campo E-mail */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               E-mail Cadastrado
@@ -110,7 +104,6 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
             </div>
           </div>
 
-          {/* Campo Senha */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Senha
@@ -135,7 +128,6 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
             </div>
           </div>
 
-          {/* Botão Login */}
           <button
             type="submit"
             disabled={loading}
@@ -152,7 +144,6 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
           </button>
         </form>
 
-        {/* Rodapé */}
         <div className="mt-8 text-center text-xs text-slate-500 font-medium space-y-3">
           <div>
             Ainda não tem uma conta?{' '}

@@ -97,10 +97,11 @@ def processar_video(video_path):
         ids_confirmados = [obj_id for obj_id, count in historico_ids.items() if count >= MIN_FRAMES]
         total_gado = len(ids_confirmados)
 
+        # Retorna o caminho absoluto do arquivo para o Node.js localizar sem falhar
         resposta = {
             "sucesso": True,
             "total_gado": total_gado,
-            "video_processado": video_processado_nome,
+            "video_processado": os.path.abspath(video_processado_path),
             "mensagem": "Processamento concluído com sucesso."
         }
         print(json.dumps(resposta))

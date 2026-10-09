@@ -8,25 +8,28 @@ datasource db {
 }
 
 model Usuario {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   nome      String
-  email     String   @unique
-  telefone  String   @default("(16) 99876-5432")
+  email     String    @unique
+  telefone  String    @default("(16) 99876-5432")
   idade     Int
   senhaHash String
   
-  fazenda   Fazenda? 
+  fazendas  Fazenda[] 
 }
 
 model Fazenda {
-  id          String   @id @default(uuid())
-  nome        String
-  localizacao String
+  id             String   @id @default(uuid())
+  nome           String
+  localizacao    String
+  areaValue      Float    @default(0)
+  areaUnit       String   @default("ha")
+  cattleCapacity Int      @default(0)
   
-  usuarioId   String   @unique
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId      String
+  usuario        Usuario  @relation(fields: [usuarioId], references: [id])
   
-  lotes       Lote[]
+  lotes          Lote[]
 }
 
 model Lote {
@@ -46,7 +49,7 @@ model Consumidor {
   id        String   @id @default(uuid())
   nome      String
   email     String   @unique
-  empresa   String   // Ex: Frigorífico Minerva, Friboi, Rede de Açougues
+  empresa   String   
   senhaHash String
   
   createdAt DateTime @default(now())

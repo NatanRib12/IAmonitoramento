@@ -10,8 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FolderPlus,
-  Trash2,
-  FileVideo
+  Trash2
 } from 'lucide-react';
 import { useVideoProcessing } from '../../context/VideoProcessing';
 
@@ -131,7 +130,6 @@ export function ProducerDashboard() {
                   </p>
                 </div>
 
-                {/* Botão de Cancelar Processamento durante o Loading */}
                 <button
                   type="button"
                   onClick={handleCancelarProcessamento}
@@ -230,7 +228,7 @@ export function ProducerDashboard() {
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Contagem da IA
               </span>
-              {(status === 'concluido' || status === 'reproduzindo') && (
+              {isConcluido && totalCabecasIa !== null && (
                 <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" /> Auditado
                 </span>
@@ -238,7 +236,7 @@ export function ProducerDashboard() {
             </div>
 
             <div className="flex flex-col items-center justify-center py-2 text-center">
-              {totalCabecasIa !== null ? (
+              {isConcluido && totalCabecasIa !== null ? (
                 <>
                   <span className="text-6xl font-extrabold text-slate-900 tracking-tight">
                     {totalCabecasIa}
@@ -250,13 +248,17 @@ export function ProducerDashboard() {
               ) : (
                 <div className="py-6 flex flex-col items-center opacity-40">
                   <Loader2 className={`w-8 h-8 text-slate-400 ${status === 'processando' ? 'animate-spin' : ''}`} />
-                  <span className="text-xs text-slate-400 font-medium mt-3">Aguardando envio do vídeo...</span>
+                  <span className="text-xs text-slate-400 font-medium mt-3">
+                    {status === 'reproduzindo' 
+                      ? 'Exibindo vídeo... Aguarde a finalização' 
+                      : 'Aguardando envio do vídeo...'}
+                  </span>
                 </div>
               )}
             </div>
 
             {/* Input de Edição Pós-IA */}
-            {totalCabecasIa !== null && (
+            {isConcluido && totalCabecasIa !== null && (
               <div className="pt-3 border-t border-slate-100 space-y-2">
                 <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
                   <Edit3 className="w-3.5 h-3.5 text-slate-400" />
@@ -277,9 +279,9 @@ export function ProducerDashboard() {
             )}
           </div>
 
-          {/* Card 2: Ação para Mercado */}
+          {/* Card 2: Ação para Mercado (Habilitado ESTREITAMENTE ao Concluir e ter Contagem) */}
           <div className={`bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm space-y-4 transition-all ${
-            status !== 'concluido' && status !== 'reproduzindo' ? 'opacity-50 grayscale pointer-events-none' : ''
+            !isConcluido || totalCabecasIa === null ? 'opacity-50 grayscale pointer-events-none' : ''
           }`}>
             <div className="flex justify-between items-center pb-2 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mercado</span>
@@ -291,12 +293,14 @@ export function ProducerDashboard() {
             </p>
 
             <button 
-              onClick={abrirModalConfirmacao}
-              disabled={notificado || enviandoNotificacao || !totalCabecasAnuncio}
-              className={`w-full py-3 rounded-lg text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                notificado
-                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+              onClick={() => abrirModalConfirmacao()}
+              disabled={!isConcluido || notificado || enviandoNotificacao || !totalCabecasAnuncio}
+              className={`w-full py-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                !isConcluido || !totalCabecasAnuncio
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  : notificado
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 cursor-default'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer'
               }`}
             >
               {enviandoNotificacao ? (
@@ -353,11 +357,10 @@ export function ProducerDashboard() {
                 00:0{tempoRestante}
               </div>
               <p className="text-xs font-semibold text-slate-700 pt-1">
-                Lote com <span className="text-emerald-700 font-extrabold">{totalCabecasAnuncio} cabeças</span> de gado.
+                Lote com <span className="text-emerald-700 font-extrabold">{totalCabecasAnuncio} gados</span> de gado.
               </p>
             </div>
 
-            {/* Barra de Progresso do Temporizador */}
             <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-emerald-600 transition-all duration-1000 ease-linear"

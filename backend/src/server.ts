@@ -5,17 +5,21 @@ import { routes } from './routers/routes';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
 
-const app = fastify({ logger: true });
+// Define o bodyLimit para 500MB (aceita grandes payloads em JSON / Base64)
+const app = fastify({ 
+  logger: true,
+  bodyLimit: 500 * 1024 * 1024 // 500 MB
+});
 
 // Habilita acesso para a aplicação React
 app.register(cors, {
   origin: true
 });
 
-// Configura recebimento de vídeos até 100MB
+// Configura recebimento de multipart/form-data até 500MB
 app.register(multipart, {
   limits: {
-    fileSize: 100 * 1024 * 1024
+    fileSize: 500 * 1024 * 1024 // 500 MB
   }
 });
 

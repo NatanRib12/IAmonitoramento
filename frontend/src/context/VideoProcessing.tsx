@@ -6,6 +6,7 @@ export type ProcessingStatus = 'ocioso' | 'processando' | 'reproduzindo' | 'conc
 
 export interface RawVideoItem {
   id: string;
+  dbLoteId?: string;
   title: string;
   date: string;
   rawDate: string;
@@ -15,13 +16,13 @@ export interface RawVideoItem {
 
 export interface AnalyzedVideoItem {
   id: string;
+  dbLoteId?: string;
   title: string;
   date: string;
   rawDate: string;
   cattleCount: number;
   videoUrl: string;
-  isNotified?: boolean; // Indica se o lote já foi lançado no mercado
-  dbLoteId?: string;
+  isNotified?: boolean;
 }
 
 interface VideoProcessingContextType {
@@ -38,7 +39,6 @@ interface VideoProcessingContextType {
   tempoRestante: number;
   salvandoGaleria: boolean;
 
-  // Galerias do Usuário
   savedRawVideos: RawVideoItem[];
   savedAnalyzedVideos: AnalyzedVideoItem[];
 
@@ -56,15 +56,23 @@ interface VideoProcessingContextType {
   limparEProximoVideo: () => void;
   salvarNasGaleriasELimpar: (jaNotificado?: boolean | any) => Promise<void>;
 
-  // Métodos das galerias
-  deletarRawVideo: (id: string) => void;
+  deletarRawVideo: (id: string) => Promise<void>;
   editarRawVideo: (id: string, newTitle: string, newRawDate: string) => void;
-  deletarAnalyzedVideo: (id: string) => void;
+  deletarAnalyzedVideo: (id: string) => Promise<void>;
   editarAnalyzedVideo: (id: string, newTitle: string, newRawDate: string, newCattleCount: number) => void;
   notificarItemGaleria: (id: string) => void;
 }
 
 const VideoProcessingContext = createContext<VideoProcessingContextType | undefined>(undefined);
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+};
 
 export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { activeFarm } = useFarm();
@@ -72,28 +80,31 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [rawVideoUrl, setRawVideoUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<ProcessingStatus>('ocioso');
+  
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [totalCabecasIa, setTotalCabecasIa] = useState<number | null>(null);
   const [totalCabecasAnuncio, setTotalCabecasAnuncio] = useState<number | string>('');
+  
   const [videoTitle, setVideoTitle] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [notificado, setNotificado] = useState(false);
   const [enviandoNotificacao, setEnviandoNotificacao] = useState(false);
   const [salvandoGaleria, setSalvandoGaleria] = useState(false);
 
-  // ID do vídeo da galeria selecionado para notificar
   const [itemGaleriaParaNotificar, setItemGaleriaParaNotificar] = useState<string | null>(null);
 
-  // Galerias do Usuário
   const [savedRawVideos, setSavedRawVideos] = useState<RawVideoItem[]>([]);
   const [savedAnalyzedVideos, setSavedAnalyzedVideos] = useState<AnalyzedVideoItem[]>([]);
 
-  // Temporizador da janela de 5s
   const [modalContagemAberta, setModalContagemAberta] = useState(false);
   const [tempoRestante, setTempoRestante] = useState<number>(5);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Carrega vídeos do Banco vinculados estritamente à fazenda ativa
+  // Travas de execução única para impedir duplicação
+  const executingRef = useRef(false);
+  const savingRef = useRef(false);
+
   useEffect(() => {
     if (activeFarm?.id) {
       api.get(`/api/videos/minha-fazenda?fazendaId=${activeFarm.id}`)
@@ -122,6 +133,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
               if (lote.videoOriginalUrl) {
                 brutos.push({
                   id: `raw-${lote.id}`,
+                  dbLoteId: lote.id,
                   title: `Vídeo Bruto - ${dataFormatada}`,
                   date: dataFormatada,
                   rawDate,
@@ -138,23 +150,28 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     }
   }, [activeFarm?.id]);
 
+  // TEMPORIZADOR LIMPO (Sem efeitos colaterais dentro de setState)
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (modalContagemAberta) {
+      executingRef.current = false;
       setTempoRestante(5);
+
       interval = setInterval(() => {
-        setTempoRestante((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            executarNotificacao();
-            return 0;
-          }
-          return prev - 1;
-        });
+        setTempoRestante((prev) => Math.max(0, prev - 1));
       }, 1000);
     }
     return () => clearInterval(interval);
   }, [modalContagemAberta]);
+
+  // DISPARO ÚNICO DA NOTIFICAÇÃO AO ZERAR O TEMPO
+  useEffect(() => {
+    if (modalContagemAberta && tempoRestante === 0) {
+      if (!executingRef.current) {
+        executarNotificacao();
+      }
+    }
+  }, [tempoRestante, modalContagemAberta]);
 
   const abrirModalConfirmacao = (videoGaleriaId?: string) => {
     if (videoGaleriaId) {
@@ -167,15 +184,25 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     setModalContagemAberta(false);
     setItemGaleriaParaNotificar(null);
     setTempoRestante(5);
+    executingRef.current = false;
   };
 
   const executarNotificacao = async () => {
+    if (executingRef.current) return;
+    executingRef.current = true;
+
     setModalContagemAberta(false);
+
+    if (!activeFarm?.id) {
+      alert('Nenhuma fazenda ativa encontrada. Por favor, selecione uma fazenda.');
+      executingRef.current = false;
+      return;
+    }
+
     setEnviandoNotificacao(true);
 
     try {
       if (itemGaleriaParaNotificar) {
-        // Notificação acionada dentro da Galeria
         const item = savedAnalyzedVideos.find((v) => v.id === itemGaleriaParaNotificar);
         if (item) {
           await api.post('/api/lotes/publicar', {
@@ -190,15 +217,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
           );
         }
       } else {
-        // Notificação acionada na Ferramenta da IA
-        await api.post('/api/lotes/publicar', {
-          quantidadeCabecas: Number(totalCabecasAnuncio),
-          videoProcessadoUrl: videoUrl,
-          fazendaId: activeFarm.id
-        });
-
         setNotificado(true);
-        // Salva com isNotified = true apenas se apertou Notificar
         await salvarNasGaleriasELimpar(true);
       }
     } catch (error) {
@@ -207,6 +226,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     } finally {
       setEnviandoNotificacao(false);
       setItemGaleriaParaNotificar(null);
+      executingRef.current = false;
     }
   };
 
@@ -222,6 +242,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     setVideoUrl(null);
     setRawVideoUrl(null);
     setStatus('ocioso');
+    setPendingCount(null);
     setTotalCabecasIa(null);
     setTotalCabecasAnuncio('');
     setVideoTitle('');
@@ -230,18 +251,24 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     setModalContagemAberta(false);
   };
 
-  // PONTO 2: Salva na galeria garantindo verificação booleana estrita
   const salvarNasGaleriasELimpar = async (jaNotificado: boolean | any = false) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSalvandoGaleria(true);
 
-    // Evita que o evento de clique do React (SyntheticEvent) seja lido como true
     const isActuallyNotified = jaNotificado === true;
+
+    if (!activeFarm?.id) {
+      console.error('Nenhuma fazenda selecionada.');
+      setSalvandoGaleria(false);
+      savingRef.current = false;
+      return;
+    }
 
     const hoje = new Date();
     const rawDateStr = hoje.toISOString().split('T')[0];
     const dateFormatted = hoje.toLocaleDateString('pt-BR');
     const tituloFinal = videoTitle.trim() || `Lote Analisado ${dateFormatted}`;
-
     const newId = `vid-${Date.now()}`;
 
     try {
@@ -258,6 +285,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
       if (rawVideoUrl) {
         const rawItem: RawVideoItem = {
           id: `raw-${newId}`,
+          dbLoteId: dbLoteId,
           title: tituloFinal,
           date: dateFormatted,
           rawDate: rawDateStr,
@@ -283,6 +311,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
       console.error('Erro ao salvar vídeo no banco de dados:', err);
     } finally {
       setSalvandoGaleria(false);
+      savingRef.current = false;
       limparEProximoVideo();
     }
   };
@@ -290,22 +319,24 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
   const processFile = async (file: File) => {
     if (!file) return;
 
-    const urlPreview = URL.createObjectURL(file);
-    setRawVideoUrl(urlPreview);
-    setVideoUrl(urlPreview);
-    setStatus('processando');
-    setNotificado(false);
-
-    const nomeLimpo = file.name.replace(/\.[^/.]+$/, "");
-    setVideoTitle(nomeLimpo);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
     try {
+      const base64Str = await fileToBase64(file);
+      setRawVideoUrl(base64Str);
+      setVideoUrl(base64Str);
+      setStatus('processando');
+      setPendingCount(null);
+      setTotalCabecasIa(null);
+      setNotificado(false);
+
+      const nomeLimpo = file.name.replace(/\.[^/.]+$/, "");
+      setVideoTitle(nomeLimpo);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const response = await api.post('/api/videos/processar', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         signal: controller.signal
@@ -313,8 +344,7 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
 
       if (response.data.sucesso) {
         const qtdIa = response.data.totalCabecas;
-        setTotalCabecasIa(qtdIa);
-        setTotalCabecasAnuncio(qtdIa);
+        setPendingCount(qtdIa);
 
         if (response.data.videoProcessadoUrl) {
           setVideoUrl(response.data.videoProcessadoUrl);
@@ -336,11 +366,41 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
   };
 
   const handleVideoFim = () => {
+    if (pendingCount !== null) {
+      setTotalCabecasIa(pendingCount);
+      setTotalCabecasAnuncio(pendingCount);
+    }
     setStatus('concluido');
   };
 
-  const deletarRawVideo = (id: string) => {
-    setSavedRawVideos((prev) => prev.filter((item) => item.id !== id));
+  const deletarRawVideo = async (id: string) => {
+    const item = savedRawVideos.find((v) => v.id === id);
+    const dbId = item?.dbLoteId || id.replace('raw-', '');
+
+    setSavedRawVideos((prev) => prev.filter((v) => v.id !== id));
+
+    if (dbId) {
+      try {
+        await api.delete(`/api/videos/${dbId}`);
+      } catch (error) {
+        console.error('Erro ao excluir vídeo bruto do banco de dados:', error);
+      }
+    }
+  };
+
+  const deletarAnalyzedVideo = async (id: string) => {
+    const item = savedAnalyzedVideos.find((v) => v.id === id);
+    const dbId = item?.dbLoteId || id.replace('ana-', '');
+
+    setSavedAnalyzedVideos((prev) => prev.filter((v) => v.id !== id));
+
+    if (dbId) {
+      try {
+        await api.delete(`/api/videos/${dbId}`);
+      } catch (error) {
+        console.error('Erro ao excluir vídeo analisado do banco de dados:', error);
+      }
+    }
   };
 
   const editarRawVideo = (id: string, newTitle: string, newRawDate: string) => {
@@ -349,10 +409,6 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     setSavedRawVideos((prev) =>
       prev.map((item) => (item.id === id ? { ...item, title: newTitle, rawDate: newRawDate, date: dataFormatted } : item))
     );
-  };
-
-  const deletarAnalyzedVideo = (id: string) => {
-    setSavedAnalyzedVideos((prev) => prev.filter((item) => item.id !== id));
   };
 
   const editarAnalyzedVideo = (id: string, newTitle: string, newRawDate: string, newCattleCount: number) => {

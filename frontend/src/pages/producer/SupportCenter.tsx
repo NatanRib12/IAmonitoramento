@@ -3,7 +3,6 @@ import {
   Mail, 
   Phone, 
   HelpCircle, 
-  Search, 
   ChevronDown, 
   ChevronUp, 
   Send, 
@@ -28,11 +27,11 @@ interface ChamadoItem {
 const faqList: FAQItem[] = [
   {
     question: 'Como funciona a contagem automatizada de gado por IA?',
-    answer: 'Nossa inteligência artificial analisa os frames do vídeo aéreo enviado pelo drone, identificando individualmente cada animal por detecção visual de alta precisão (YOLOv8 + ByteTrack) e gerando a contagem auditada automaticamente.'
+    answer: 'Nossa inteligência artificial analisa os frames do vídeo aéreo enviado pelo drone, identificando individualmente cada animal por detecção visual, gerando a contagem automaticamente.'
   },
   {
     question: 'Quais formatos de vídeo de drone são aceitos pela plataforma?',
-    answer: 'Aceitamos arquivos no formato MP4 gravados em resolução HD ou 4K por qualquer drone (como modelos DJI). Recomendamos voos com altura constante entre 15 e 30 metros para melhor precisão.'
+    answer: 'Aceitamos arquivos no formato MP4 gravados por qualquer drone (como modelos DJI). Recomendamos voos com altura constante entre 15 e 30 metros para melhor precisão.'
   },
   {
     question: 'Como posso alterar ou cadastrar novas fazendas?',
@@ -186,18 +185,6 @@ export function SupportCenter() {
                 <h2 className="text-base font-bold text-slate-900">Perguntas Frequentes</h2>
                 <p className="text-xs text-slate-400">Respostas rápidas para as dúvidas mais comuns</p>
               </div>
-            </div>
-
-            {/* Busca no FAQ */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar nas perguntas frequentes..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
-              />
             </div>
 
             {/* Lista de Acordeões */}
