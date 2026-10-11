@@ -445,4 +445,57 @@ export async function routes(app: FastifyInstance) {
       return reply.status(500).send({ erro: 'Falha ao buscar lotes disponíveis.' });
     }
   });
+
+app.post('/api/chamados', async (request, reply) => {
+    const { usuarioId, subject, message, fazendaNome } = request.body as any;
+
+    if (!usuarioId || !message) {
+      return reply.status(400).send({ erro: 'ID do usuário e mensagem são obrigatórios.' });
+    }
+
+    try {
+      const novoChamado = await (prisma as any).chamado.create({
+        data: {
+          usuarioId,
+          subject: subject?.trim() || 'Sem assunto',
+          message: message.trim(),
+          status: 'Em análise',
+          fazendaNome: fazendaNome || 'Não especificada'
+        }
+      });
+
+      return reply.status(201).send({
+        sucesso: true,
+        mensagem: 'Chamado aberto com sucesso!',
+        chamado: novoChamado
+      });
+    } catch (error) {
+      console.error('Erro ao abrir chamado:', error);
+      return reply.status(500).send({ erro: 'Falha ao registrar chamado no banco de dados.' });
+    }
+  });
+
+  // ROTA: Buscar Todos os Chamados do Usuário
+  app.get('/api/chamados/usuario/:usuarioId', async (request, reply) => {
+    const { usuarioId } = request.params as { usuarioId: string };
+
+    if (!usuarioId) {
+      return reply.status(400).send({ erro: 'ID do usuário é obrigatório.' });
+    }
+
+    try {
+      const chamados = await (prisma as any).chamado.findMany({
+        where: { usuarioId },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      return reply.send({
+        sucesso: true,
+        chamados
+      });
+    } catch (error) {
+      console.error('Erro ao buscar chamados:', error);
+      return reply.status(500).send({ erro: 'Falha ao carregar chamados do banco de dados.' });
+    }
+  });
 }

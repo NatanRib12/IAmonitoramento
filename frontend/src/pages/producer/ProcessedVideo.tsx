@@ -8,11 +8,15 @@ import {
   Play, 
   Bell, 
   Radio, 
-  ShieldCheck
+  ShieldCheck,
+  Tractor
 } from 'lucide-react';
+import { useFarm } from '../../context/FarmContext';
 import { useVideoProcessing, type AnalyzedVideoItem } from '../../context/VideoProcessing';
 
 export function ProcessedVideo() {
+  const { activeFarm } = useFarm();
+
   const { 
     savedAnalyzedVideos, 
     deletarAnalyzedVideo, 
@@ -88,9 +92,15 @@ export function ProcessedVideo() {
       
       {/* Cabeçalho */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-          Vídeos com Análise
-        </h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            Vídeos Anteriores
+          </h1>
+            <span className="inline-flex items-center gap-1.5 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs">
+              <Tractor className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Fazenda: {activeFarm?.name}</span>
+            </span>
+          </div>
         <p className="text-slate-500 text-sm mt-1">
           Biblioteca de vídeos auditados pela IA. Notifique os parceiros para disponibilizar o lote no mercado.
         </p>
@@ -329,16 +339,6 @@ export function ProcessedVideo() {
                     type="date"
                     value={editRawDate}
                     onChange={(e) => setEditRawDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Contagem de Gado</label>
-                  <input
-                    type="number"
-                    value={editCattleCount}
-                    onChange={(e) => setEditCattleCount(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900"
                   />
                 </div>

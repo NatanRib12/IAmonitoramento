@@ -4,8 +4,8 @@ import cors from '@fastify/cors';
 import { routes } from './routers/routes';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
+import fs from 'fs';
 
-// Define o bodyLimit para 500MB (aceita grandes payloads em JSON / Base64)
 const app = fastify({ 
   logger: true,
   bodyLimit: 500 * 1024 * 1024 // 500 MB
@@ -19,11 +19,16 @@ app.register(cors, {
 // Configura recebimento de multipart/form-data até 500MB
 app.register(multipart, {
   limits: {
-    fileSize: 500 * 1024 * 1024 // 500 MB
+    fileSize: 500 * 1024 * 1024
   }
 });
 
+// Garante que a pasta 'uploads' exista antes de registrar o plugin estático
 const uploadsDir = path.resolve(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 app.register(fastifyStatic, {
   root: uploadsDir,
   prefix: '/uploads/',
@@ -35,7 +40,7 @@ app.register(routes);
 const start = async () => {
   try {
     await app.listen({ port: 3333, host: '0.0.0.0' });
-    console.log('Backend em http://localhost:3333');
+    console.log('Backend executando em http://localhost:3333');
   } catch (err) {
     app.log.error(err);
     process.exit(1);

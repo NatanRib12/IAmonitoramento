@@ -271,9 +271,15 @@ export const AnalyticsDashboard: React.FC = () => {
       {/* Cabeçalho */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Análise de Vendas de Lotes
-          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              Análise de Vendas de Lotes
+            </h1>
+            <span className="inline-flex items-center gap-1.5 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs">
+              <Building2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Fazenda: {activeFarm?.name || 'Não selecionada'}</span>
+            </span>
+          </div>
           <p className="text-slate-500 text-sm mt-1">
             Visão geral da comercialização de gado e balanço financeiro da propriedade.
           </p>
@@ -288,7 +294,6 @@ export const AnalyticsDashboard: React.FC = () => {
             className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer"
           >
             <option value={2026}>2026</option>
-            <option value={2025}>2025</option>
           </select>
         </div>
       </div>

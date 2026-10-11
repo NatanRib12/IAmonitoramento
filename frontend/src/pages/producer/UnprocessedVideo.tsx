@@ -5,11 +5,15 @@ import {
   Pencil, 
   Play, 
   X, 
-  Film 
+  Film,
+  Tractor 
 } from 'lucide-react';
+import { useFarm } from '../../context/FarmContext';
 import { useVideoProcessing, type RawVideoItem } from '../../context/VideoProcessing';
 
 export function UnprocessedVideo() {
+  const { activeFarm } = useFarm();
+
   const { 
     savedRawVideos, 
     deletarRawVideo, 
@@ -57,9 +61,15 @@ export function UnprocessedVideo() {
       
       {/* Cabeçalho */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-          Vídeos Anteriores (Brutos)
-        </h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            Vídeos Anteriores
+          </h1>
+          <span className="inline-flex items-center gap-1.5 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs">
+            <Tractor className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>Fazenda: {activeFarm?.name}</span>
+          </span>
+        </div>
         <p className="text-slate-500 text-sm mt-1">
           Biblioteca de gravações originais enviadas pelos drones antes do processamento pela IA.
         </p>
