@@ -4,19 +4,23 @@ import { api } from '../../services/api';
 import { useFarm } from '../../context/FarmContext';
 
 interface LoginProps {
-  onLogin: () => void;
+  onLoginProducerSuccess: () => void;
+  onLoginBuyerSuccess: () => void;
   onNavigateLanding?: () => void;
-  onNavigateRegister?: () => void;
-  onNavigateConsumerLogin?: () => void;
+  onNavigateRegister: () => void;
 }
 
-export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, onNavigateConsumerLogin }: LoginProps) {
+export function Login({
+  onLoginProducerSuccess,
+  onLoginBuyerSuccess,
+  onNavigateLanding,
+  onNavigateRegister,
+}: LoginProps) {
   const { setUserSession } = useFarm();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -26,31 +30,56 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
     setLoading(true);
 
     try {
-      const response = await api.post('/api/usuarios/login', {
-        email,
-        senha: password
-      });
-
-      if (response.data?.sucesso || response.data?.usuario) {
-        const usuarioBD = response.data.usuario || response.data;
-        
-        // Passa explicitamente o ID do usuário para o Contexto e LocalStorage
-        setUserSession({
-          id: usuarioBD.id,
-          nome: usuarioBD.nome,
-          fazenda: usuarioBD.fazenda,
-          fazendas: usuarioBD.fazendas
+      // 1. Tenta autenticação como Produtor / Fazendeiro
+      try {
+        const resProducer = await api.post('/api/usuarios/login', {
+          email,
+          senha: password,
         });
 
-        onLogin();
-      } else {
-        throw new Error('Resposta de autenticação inválida.');
+        if (resProducer.data?.sucesso || resProducer.data?.usuario) {
+          const user = resProducer.data.usuario || resProducer.data;
+          setUserSession({
+            id: user.id,
+            nome: user.nome,
+            tipo: 'produtor',
+            fazenda: user.fazenda,
+            fazendas: user.fazendas,
+          });
+          localStorage.setItem('@AgroIntelli:userType', 'produtor');
+          localStorage.setItem('@AgroIntelli:userId', user.id);
+          onLoginProducerSuccess();
+          return;
+        }
+      } catch (prodErr) {
+        // Tenta como Comprador
       }
+
+      // 2. Tenta autenticação como Comprador / Frigorífico
+      const resBuyer = await api.post('/api/consumidores/login', {
+        email,
+        senha: password,
+      });
+
+      if (resBuyer.data?.sucesso || resBuyer.data?.consumidor) {
+        const buyer = resBuyer.data.consumidor || resBuyer.data;
+        setUserSession({
+          id: buyer.id,
+          nome: buyer.nome,
+          empresa: buyer.empresa,
+          tipo: 'comprador',
+        });
+        localStorage.setItem('@AgroIntelli:userType', 'comprador');
+        localStorage.setItem('@AgroIntelli:userId', buyer.id);
+        onLoginBuyerSuccess();
+        return;
+      }
+
+      throw new Error('Credenciais não encontradas.');
     } catch (err: any) {
-      console.error('Erro de login:', err);
+      console.error('Erro de autenticação:', err);
       setErro(
-        err.response?.data?.erro || 
-        err.response?.data?.mensagem || 
+        err.response?.data?.erro ||
         'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.'
       );
     } finally {
@@ -60,7 +89,7 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
 
   return (
     <div className="min-h-screen w-full bg-[linear-gradient(225deg,#b8c7dd_0%,#cdd0ca_50%,#e7d8b6_100%)] flex items-center justify-center p-6 font-sans">
-      <div className="w-full max-w-md bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/60 relative">
+      <div className="w-full max-w-md bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/60 relative text-slate-800">
         
         {onNavigateLanding && (
           <button
@@ -70,13 +99,19 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
             title="Voltar para a página inicial"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Voltar</span>
+            <span>Início</span>
           </button>
         )}
 
+        {/* Cabeçalho */}
         <div className="flex flex-col items-center mb-6 text-center pt-2">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Login do Produtor</h1>
-          <p className="text-xs text-slate-500 font-semibold mt-1">Acesse sua conta para gerenciar suas fazendas</p>
+          <span className="text-xl font-black text-emerald-700 tracking-tight mb-1">
+            AgroIntelli
+          </span>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Acesse sua Conta</h1>
+          <p className="text-xs text-slate-500 font-semibold mt-1">
+            Acesso único para Produtores e Compradores
+          </p>
         </div>
 
         {erro && (
@@ -88,15 +123,13 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              E-mail Cadastrado
-            </label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">E-mail Cadastrado</label>
             <div className="relative">
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu.email@fazenda.com.br"
+                placeholder="seu.email@exemplo.com"
                 required
                 className="w-full px-4 py-3 pl-11 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all font-medium text-xs"
               />
@@ -105,15 +138,13 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Senha
-            </label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Senha</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Sua senha"
+                placeholder="••••••••"
                 required
                 className="w-full px-4 py-3 pl-11 pr-11 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all font-medium text-xs"
               />
@@ -136,34 +167,23 @@ export function ProducerLogin({ onLogin, onNavigateLanding, onNavigateRegister, 
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                <span>Autenticando...</span>
+                <span>Entrando...</span>
               </>
             ) : (
-              <span>Entrar no Sistema</span>
+              <span>Entrar na Plataforma</span>
             )}
           </button>
         </form>
 
-        <div className="mt-8 text-center text-xs text-slate-500 font-medium space-y-3">
-          <div>
-            Ainda não tem uma conta?{' '}
-            <button
-              type="button"
-              onClick={onNavigateRegister}
-              className="text-emerald-700 hover:text-emerald-800 font-bold hover:underline transition cursor-pointer"
-            >
-              Criar conta
-            </button>
-          </div>
-          {onNavigateConsumerLogin && (
-            <button
-              type="button"
-              onClick={onNavigateConsumerLogin}
-              className="mt-1 w-full py-2.5 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 border border-emerald-200/80 rounded-xl font-bold transition flex items-center justify-center gap-2 text-xs cursor-pointer"
-            >
-              <span>Sou comprador / frigorífico</span>
-            </button>
-          )}
+        <div className="mt-8 text-center text-xs text-slate-500 font-medium">
+          Ainda não tem uma conta?{' '}
+          <button
+            type="button"
+            onClick={onNavigateRegister}
+            className="text-emerald-700 hover:text-emerald-800 font-bold hover:underline transition cursor-pointer"
+          >
+            Criar conta
+          </button>
         </div>
 
       </div>

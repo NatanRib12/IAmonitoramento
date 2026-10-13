@@ -1,6 +1,7 @@
 import React from 'react';
 import { 
   BarChart3, 
+  ShoppingBag,
   Video, 
   Film, 
   CheckSquare, 
@@ -33,7 +34,7 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
       <aside className="w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between shrink-0 select-none h-full">
         <div className="flex flex-col h-full overflow-y-auto">
           
-          {/* Logo Limpo */}
+          {/* Logo */}
           <div className="p-6 border-b border-slate-100/80 shrink-0">
             <span 
               onClick={() => onNavigate('grafico-analise')}
@@ -49,19 +50,34 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
             {/* ANÁLISE DE VENDAS DE LOTES */}
             <div>
               <p className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Análise de Vendas de Lotes
+                Análise e Anûncio de Lotes
               </p>
-              <button
-                onClick={() => onNavigate('grafico-analise')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                  activeSubSection === 'grafico-analise'
-                    ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <BarChart3 className={`w-4 h-4 ${activeSubSection === 'grafico-analise' ? 'text-emerald-600' : 'text-slate-400'}`} />
-                Gráfico de Análise
-              </button>
+              <div className="space-y-1">
+                <button
+                  onClick={() => onNavigate('grafico-analise')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                    activeSubSection === 'grafico-analise'
+                      ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <BarChart3 className={`w-4 h-4 ${activeSubSection === 'grafico-analise' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  Gráfico de Análise
+                </button>
+
+                {/* NOVA SUBSEÇÃO */}
+                <button
+                  onClick={() => onNavigate('lotes-mercado')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                    activeSubSection === 'lotes-mercado'
+                      ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <ShoppingBag className={`w-4 h-4 ${activeSubSection === 'lotes-mercado' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  Mercado
+                </button>
+              </div>
             </div>
 
             {/* ANÁLISE */}
@@ -152,7 +168,7 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
 
           </nav>
 
-          {/* Rodapé do Perfil com Fazenda Ativa em Tempo Real */}
+          {/* Rodapé do Perfil */}
           <div className="p-4 border-t border-slate-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-sm shrink-0">

@@ -4,7 +4,7 @@ import { useFarm } from '../context/FarmContext';
 
 export type ProcessingStatus = 'ocioso' | 'processando' | 'reproduzindo' | 'concluido' | 'erro';
 
-export interface RawVideoItem {
+export type RawVideoItem = {
   id: string;
   dbLoteId?: string;
   title: string;
@@ -12,9 +12,9 @@ export interface RawVideoItem {
   rawDate: string;
   videoUrl: string;
   duration?: string;
-}
+};
 
-export interface AnalyzedVideoItem {
+export type AnalyzedVideoItem = {
   id: string;
   dbLoteId?: string;
   title: string;
@@ -23,7 +23,7 @@ export interface AnalyzedVideoItem {
   cattleCount: number;
   videoUrl: string;
   isNotified?: boolean;
-}
+};
 
 interface VideoProcessingContextType {
   videoUrl: string | null;
@@ -65,16 +65,16 @@ interface VideoProcessingContextType {
 
 const VideoProcessingContext = createContext<VideoProcessingContextType | undefined>(undefined);
 
-const fileToBase64 = (file: File): Promise<string> => {
+function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = (error) => reject(error);
   });
-};
+}
 
-export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export function VideoProcessingProvider({ children }: { children: ReactNode }) {
   const { activeFarm } = useFarm();
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -101,7 +101,6 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Travas de execução única para impedir duplicação
   const executingRef = useRef(false);
   const savingRef = useRef(false);
 
@@ -150,7 +149,6 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     }
   }, [activeFarm?.id]);
 
-  // TEMPORIZADOR LIMPO (Sem efeitos colaterais dentro de setState)
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (modalContagemAberta) {
@@ -164,7 +162,6 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
     return () => clearInterval(interval);
   }, [modalContagemAberta]);
 
-  // DISPARO ÚNICO DA NOTIFICAÇÃO AO ZERAR O TEMPO
   useEffect(() => {
     if (modalContagemAberta && tempoRestante === 0) {
       if (!executingRef.current) {
@@ -465,12 +462,12 @@ export const VideoProcessingProvider: React.FC<{ children: ReactNode }> = ({ chi
       {children}
     </VideoProcessingContext.Provider>
   );
-};
+}
 
-export const useVideoProcessing = () => {
+export function useVideoProcessing() {
   const context = useContext(VideoProcessingContext);
   if (!context) {
     throw new Error('useVideoProcessing deve ser usado dentro de VideoProcessingProvider');
   }
   return context;
-};
+}

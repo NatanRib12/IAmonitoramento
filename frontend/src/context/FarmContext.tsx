@@ -14,6 +14,15 @@ export interface Farm {
   isActive: boolean;
 }
 
+export interface UserSession {
+  id: string;
+  nome: string;
+  empresa?: string;
+  tipo?: 'produtor' | 'comprador';
+  fazenda?: any;
+  fazendas?: any[];
+}
+
 export type OmittedFarmInput = Omit<Farm, 'id' | 'isActive'>;
 
 interface FarmContextType {
@@ -21,7 +30,9 @@ interface FarmContextType {
   userFarms: Farm[];
   userName: string;
   userId: string | null;
+  userSession: UserSession | null;
   setUserSession: (user: any) => void;
+  logout: () => void;
   setActiveFarmById: (id: string) => void;
   updateActiveFarm: (updatedData: Partial<Farm>) => Promise<void>;
   addNewFarm: (newFarmData: OmittedFarmInput) => Promise<void>;
@@ -48,6 +59,24 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [userId, setUserId] = useState<string | null>(() => {
     return localStorage.getItem('@AgroIntelli:userId') || null;
+  });
+
+  const [userSession, setUserSessionState] = useState<UserSession | null>(() => {
+    const saved = localStorage.getItem('@AgroIntelli:userSession');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Erro ao restaurar sessão:', e);
+      }
+    }
+    const id = localStorage.getItem('@AgroIntelli:userId');
+    const nome = localStorage.getItem('@AgroIntelli:userName');
+    const tipo = (localStorage.getItem('@AgroIntelli:userType') as 'produtor' | 'comprador') || undefined;
+    if (id && nome) {
+      return { id, nome, tipo };
+    }
+    return null;
   });
 
   const [userFarms, setUserFarms] = useState<Farm[]>(() => {
@@ -102,10 +131,23 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [userFarms]);
 
-  // Extrai o ID do usuário de forma flexível de qualquer estrutura de objeto enviada pelo login ou registro
   const setUserSession = (userData: any) => {
     const extractedId = userData?.id || userData?.usuarioId || userData?.usuario?.id;
     const extractedName = userData?.nome || userData?.name || userData?.usuario?.nome || 'Produtor';
+    const extractedEmpresa = userData?.empresa;
+    const extractedTipo = userData?.tipo || (localStorage.getItem('@AgroIntelli:userType') as 'produtor' | 'comprador');
+
+    const sessionObj: UserSession = {
+      id: extractedId,
+      nome: extractedName,
+      empresa: extractedEmpresa,
+      tipo: extractedTipo,
+      fazenda: userData?.fazenda,
+      fazendas: userData?.fazendas
+    };
+
+    setUserSessionState(sessionObj);
+    localStorage.setItem('@AgroIntelli:userSession', JSON.stringify(sessionObj));
 
     setUserName(extractedName);
     localStorage.setItem('@AgroIntelli:userName', extractedName);
@@ -137,6 +179,18 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         owner: extractedName
       }]);
     }
+  };
+
+  const logout = () => {
+    setUserSessionState(null);
+    setUserId(null);
+    setUserName('Produtor');
+    setUserFarms([defaultFarm]);
+    localStorage.removeItem('@AgroIntelli:userSession');
+    localStorage.removeItem('@AgroIntelli:userId');
+    localStorage.removeItem('@AgroIntelli:userName');
+    localStorage.removeItem('@AgroIntelli:userType');
+    localStorage.removeItem('@AgroIntelli:userFarms');
   };
 
   const setActiveFarmById = (id: string) => {
@@ -247,7 +301,9 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         userFarms,
         userName,
         userId,
+        userSession,
         setUserSession,
+        logout,
         setActiveFarmById,
         updateActiveFarm,
         addNewFarm,
