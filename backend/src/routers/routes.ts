@@ -163,7 +163,15 @@ export async function routes(app: FastifyInstance) {
 
   // ROTA: Salvar Vídeo Diretamente no Banco de Dados
   app.post('/api/videos/salvar-galeria', async (request, reply) => {
-    const { fazendaId, quantidadeCabecas, videoOriginalUrl, videoProcessadoUrl, status } = request.body as any;
+    // 1. Incluído valorTotal na desestruturação da requisição
+    const { 
+      fazendaId, 
+      quantidadeCabecas, 
+      valorTotal, 
+      videoOriginalUrl, 
+      videoProcessadoUrl, 
+      status 
+    } = request.body as any;
 
     if (!fazendaId) {
       return reply.status(400).send({ erro: 'O ID da fazenda é obrigatório.' });
@@ -173,6 +181,7 @@ export async function routes(app: FastifyInstance) {
       const novoLote = await prisma.lote.create({
         data: {
           quantidadeCabecas: Number(quantidadeCabecas) || 0,
+          valorTotal: Number(valorTotal) || 0, // <-- CORREÇÃO: valorTotal gravado no banco
           videoOriginalUrl: videoOriginalUrl || '',
           videoProcessadoUrl: videoProcessadoUrl || '',
           status: status || 'RASCUNHO',
@@ -230,113 +239,120 @@ export async function routes(app: FastifyInstance) {
 
   // ROTA: Publicar Lote no Mercado + Disparo de Notificações por E-mail (Resend)
   app.post('/api/lotes/publicar', async (request, reply) => {
-    const { loteId, quantidadeCabecas, videoProcessadoUrl, fazendaId } = request.body as any;
+  const { loteId, quantidadeCabecas, valorTotal, videoProcessadoUrl, fazendaId } = request.body as any;
+
+  try {
+    let lotePublicado: any = null;
+
+    if (loteId) {
+      lotePublicado = await prisma.lote.update({
+        where: { id: loteId },
+        data: {
+          status: 'DISPONIVEL',
+          quantidadeCabecas: quantidadeCabecas ? Number(quantidadeCabecas) : undefined,
+          valorTotal: valorTotal !== undefined && valorTotal !== null ? Number(valorTotal) : undefined
+        },
+        include: {
+          fazenda: {
+            include: {
+              usuario: true
+            }
+          }
+        }
+      });
+    } else if (fazendaId) {
+      lotePublicado = await prisma.lote.create({
+        data: {
+          quantidadeCabecas: Number(quantidadeCabecas) || 0,
+          valorTotal: valorTotal ? Number(valorTotal) : 0,
+          videoOriginalUrl: videoProcessadoUrl || '',
+          videoProcessadoUrl: videoProcessadoUrl || '',
+          status: 'DISPONIVEL',
+          fazendaId: fazendaId
+        },
+        include: {
+          fazenda: {
+            include: {
+              usuario: true
+            }
+          }
+        }
+      });
+    } else {
+      return reply.status(400).send({ erro: 'ID da fazenda ou do lote não informado.' });
+    }
+
+    // DISPARO DE NOTIFICAÇÕES VIA RESEND
+    const qtdCabecas = lotePublicado.quantidadeCabecas || 0;
+    const valorFormatado = lotePublicado.valorTotal 
+      ? Number(lotePublicado.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      : 'A combinar';
+
+    const minQtd = Math.max(1, qtdCabecas - 10);
+    const maxQtd = qtdCabecas + 10;
 
     try {
-      let lotePublicado: any = null;
-
-      if (loteId) {
-        lotePublicado = await prisma.lote.update({
-          where: { id: loteId },
-          data: {
-            status: 'DISPONIVEL',
-            quantidadeCabecas: quantidadeCabecas ? Number(quantidadeCabecas) : undefined
-          },
-          include: {
-            fazenda: {
-              include: {
-                usuario: true
-              }
-            }
+      const alertasCompativeis = await (prisma as any).alertaRadar.findMany({
+        where: {
+          quantidadeDesejada: {
+            gte: minQtd,
+            lte: maxQtd
           }
-        });
-      } else if (fazendaId) {
-        lotePublicado = await prisma.lote.create({
-          data: {
-            quantidadeCabecas: Number(quantidadeCabecas) || 0,
-            videoOriginalUrl: videoProcessadoUrl || '',
-            videoProcessadoUrl: videoProcessadoUrl || '',
-            status: 'DISPONIVEL',
-            fazendaId: fazendaId
-          },
-          include: {
-            fazenda: {
-              include: {
-                usuario: true
-              }
-            }
-          }
-        });
-      } else {
-        return reply.status(400).send({ erro: 'ID da fazenda ou do lote não informado.' });
-      }
-
-      // DISPARO DE NOTIFICAÇÕES VIA RESEND
-      const qtdCabecas = lotePublicado.quantidadeCabecas || 0;
-      const minQtd = Math.max(1, qtdCabecas - 10);
-      const maxQtd = qtdCabecas + 10;
-
-      try {
-        const alertasCompativeis = await (prisma as any).alertaRadar.findMany({
-          where: {
-            quantidadeDesejada: {
-              gte: minQtd,
-              lte: maxQtd
-            }
-          },
-          include: {
-            consumidor: true,
-            usuario: true
-          }
-        });
-
-        for (const alerta of alertasCompativeis) {
-          const destinatarioEmail = alerta.consumidor?.email || alerta.usuario?.email;
-          if (!destinatarioEmail) continue;
-
-          if (
-            alerta.regiao &&
-            lotePublicado.fazenda?.localizacao &&
-            !lotePublicado.fazenda.localizacao.toLowerCase().includes(alerta.regiao.toLowerCase())
-          ) {
-            continue;
-          }
-
-          await resend.emails.send({
-            from: 'AgroIntelli Radar <notificacoes@agrointelli.com>',
-            to: [destinatarioEmail],
-            subject: `🎯 Novo Lote Encontrado: ${qtdCabecas} gados em ${lotePublicado.fazenda?.nome || 'Fazenda'}`,
-            html: `
-              <div style="font-family: sans-serif; color: #334155; padding: 20px;">
-                <h2 style="color: #059669;">Novo Lote Auditado Encontrado no Radar AgroIntelli!</h2>
-                <p>Olá! Um novo lote foi publicado no mercado e atende aos critérios do seu alerta de interesse.</p>
-                
-                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin: 15px 0;">
-                  <p style="margin: 4px 0;"><strong>Fazenda:</strong> ${lotePublicado.fazenda?.nome || 'Propriedade Rural'}</p>
-                  <p style="margin: 4px 0;"><strong>Localização:</strong> ${lotePublicado.fazenda?.localizacao || 'Não informada'}</p>
-                  <p style="margin: 4px 0;"><strong>Volume Disponível:</strong> ${qtdCabecas} cabeças</p>
-                  <p style="margin: 4px 0;"><strong>Vendedor/Produtor:</strong> ${lotePublicado.fazenda?.usuario?.nome || 'Produtor'}</p>
-                </div>
-
-                <p>Acesse o painel do consumidor na plataforma AgroIntelli para iniciar a negociação via WhatsApp!</p>
-              </div>
-            `
-          });
+        },
+        include: {
+          consumidor: true,
+          usuario: true
         }
-      } catch (errEmail) {
-        console.error('Erro ao processar notificações do Resend:', errEmail);
-      }
-
-      return reply.status(201).send({
-        sucesso: true,
-        mensagem: 'Lote disponibilizado para o mercado!',
-        lote: lotePublicado
       });
-    } catch (error) {
-      console.error('Erro ao publicar lote:', error);
-      return reply.status(500).send({ erro: 'Falha ao publicar lote no mercado.' });
+
+      for (const alerta of alertasCompativeis) {
+        const destinatarioEmail = alerta.consumidor?.email || alerta.usuario?.email;
+        if (!destinatarioEmail) continue;
+
+        if (
+          alerta.regiao &&
+          lotePublicado.fazenda?.localizacao &&
+          !lotePublicado.fazenda.localizacao.toLowerCase().includes(alerta.regiao.toLowerCase())
+        ) {
+          continue;
+        }
+
+        await resend.emails.send({
+          from: 'AgroIntelli Radar <notificacoes@agrointelli.com>',
+          to: [destinatarioEmail],
+          subject: `🎯 Novo Lote Encontrado: ${qtdCabecas} gados em ${lotePublicado.fazenda?.nome || 'Fazenda'}`,
+          html: `
+            <div style="font-family: sans-serif; color: #334155; padding: 20px;">
+              <h2 style="color: #059669;">Novo Lote Auditado Encontrado no Radar AgroIntelli!</h2>
+              <p>Olá! Um novo lote foi publicado no mercado e atende aos critérios do seu alerta de interesse.</p>
+              
+              <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin: 15px 0;">
+                <p style="margin: 4px 0;"><strong>Fazenda:</strong> ${lotePublicado.fazenda?.nome || 'Propriedade Rural'}</p>
+                <p style="margin: 4px 0;"><strong>Localização:</strong> ${lotePublicado.fazenda?.localizacao || 'Não informada'}</p>
+                <p style="margin: 4px 0;"><strong>Volume Disponível:</strong> ${qtdCabecas} cabeças</p>
+                <p style="margin: 4px 0;"><strong>Valor do Lote:</strong> ${valorFormatado}</p>
+                <p style="margin: 4px 0;"><strong>Vendedor/Produtor:</strong> ${lotePublicado.fazenda?.usuario?.nome || 'Produtor'}</p>
+              </div>
+
+              <p>Acesse o painel do consumidor na plataforma AgroIntelli para iniciar a negociação via WhatsApp!</p>
+            </div>
+          `
+        });
+      }
+    } catch (errEmail) {
+      console.error('Erro ao processar notificações do Resend:', errEmail);
     }
-  });
+
+    return reply.status(201).send({
+      sucesso: true,
+      mensagem: 'Lote disponibilizado para o mercado!',
+      lote: lotePublicado
+    });
+  } catch (error) {
+    console.error('Erro ao publicar lote:', error);
+    return reply.status(500).send({ erro: 'Falha ao publicar lote no mercado.' });
+  }
+});
 
   // ROTA: Login de Usuário (Produtor)
   app.post('/api/usuarios/login', async (request, reply) => {
@@ -489,6 +505,7 @@ export async function routes(app: FastifyInstance) {
     }
   });
 
+  // ROTA: Lotes Disponíveis no Mercado (Apenas status DISPONIVEL)
   app.get('/api/lotes/disponiveis', async (request, reply) => {
     try {
       const lotes = await prisma.lote.findMany({
@@ -581,45 +598,68 @@ export async function routes(app: FastifyInstance) {
   });
 
   // ROTAS DE SUPORTE E CHAMADOS
-  app.post('/api/chamados', async (request, reply) => {
-    const { usuarioId, subject, message, fazendaNome } = request.body as any;
+app.post('/api/chamados', async (request, reply) => {
+  const { usuarioId, subject, message, fazendaNome } = request.body as {
+    usuarioId: string;
+    subject?: string;
+    message: string;
+    fazendaNome?: string;
+  };
 
-    if (!usuarioId || !message) {
-      return reply.status(400).send({ erro: 'ID do usuário e mensagem são obrigatórios.' });
+  if (!usuarioId || !message) {
+    return reply.status(400).send({ erro: 'ID do usuário e mensagem são obrigatórios.' });
+  }
+
+  try {
+    const usuarioExiste = await prisma.usuario.findUnique({ where: { id: usuarioId } });
+    const consumidorExiste = await prisma.consumidor.findUnique({ where: { id: usuarioId } });
+
+    if (!usuarioExiste && !consumidorExiste) {
+      return reply.status(400).send({ 
+        erro: 'Usuário/Consumidor não encontrado. Por favor, faça login novamente.' 
+      });
     }
 
-    try {
-      const novoChamado = await (prisma as any).chamado.create({
-        data: {
-          usuarioId,
-          subject: subject?.trim() || 'Sem assunto',
-          message: message.trim(),
-          status: 'Em análise',
-          fazendaNome: fazendaNome || 'Não especificada'
-        }
-      });
+    // Monta o payload dinamicamente vinculando apenas a chave estrangeira existente
+    const dataChamado: any = {
+      subject: subject || 'Atendimento Geral',
+      message: message,
+      fazendaNome: fazendaNome || 'Não informada',
+      status: 'Em análise'
+    };
 
-      return reply.status(201).send({
-        sucesso: true,
-        mensagem: 'Chamado aberto com sucesso!',
-        chamado: novoChamado
-      });
-    } catch (error) {
-      console.error('Erro ao abrir chamado:', error);
-      return reply.status(500).send({ erro: 'Falha ao registrar chamado no banco de dados.' });
+    if (usuarioExiste) {
+      dataChamado.usuarioId = usuarioId;
+    } else if (consumidorExiste) {
+      dataChamado.consumidorId = usuarioId;
     }
-  });
 
-  app.get('/api/chamados/usuario/:usuarioId', async (request, reply) => {
+    const novoChamado = await (prisma as any).chamado.create({
+      data: dataChamado
+    });
+
+    return reply.status(201).send({ sucesso: true, chamado: novoChamado });
+  } catch (error) {
+    console.error('Erro ao abrir chamado:', error);
+    return reply.status(500).send({ erro: 'Falha ao registrar chamado.' });
+  }
+});
+
+app.get('/api/chamados/usuario/:usuarioId', async (request, reply) => {
     const { usuarioId } = request.params as { usuarioId: string };
 
     if (!usuarioId) {
-      return reply.status(400).send({ erro: 'ID do usuário é obrigatório.' });
+      return reply.status(400).send({ erro: 'ID é obrigatório.' });
     }
 
     try {
       const chamados = await (prisma as any).chamado.findMany({
-        where: { usuarioId },
+        where: {
+          OR: [
+            { usuarioId: usuarioId },
+            { consumidorId: usuarioId }
+          ]
+        },
         orderBy: { createdAt: 'desc' }
       });
 
@@ -630,6 +670,243 @@ export async function routes(app: FastifyInstance) {
     } catch (error) {
       console.error('Erro ao buscar chamados:', error);
       return reply.status(500).send({ erro: 'Falha ao carregar chamados do banco de dados.' });
+    }
+  });
+
+  // ROTA: Reservar Lote (Associa Consumidor e Altera Status para RESERVADO)
+app.put('/api/lotes/:id/reservar', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { consumidorId, consumerName, consumerCompany, consumerPhone } = request.body as any;
+
+    if (!id) {
+      return reply.status(400).send({ erro: 'ID do lote é obrigatório.' });
+    }
+
+    try {
+      const loteAtualizado = await prisma.lote.update({
+        where: { id },
+        data: {
+          status: 'RESERVADO',
+          consumerId: consumidorId || null,
+          consumerName: consumerName || null,
+          consumerCompany: consumerCompany || null,
+          consumerPhone: consumerPhone || null
+        }
+      });
+
+      return reply.send({
+        sucesso: true,
+        mensagem: 'Lote reservado com sucesso no banco de dados!',
+        lote: loteAtualizado
+      });
+    } catch (error) {
+      console.error('Erro ao reservar lote no banco:', error);
+      return reply.status(500).send({ erro: 'Falha ao registrar reserva no banco de dados.' });
+    }
+  });
+
+  /// 1. ROTA: Buscar Lotes Reservados Ativos (Exclui lotes VENDIDOS para que sumam da aba de reservas)
+    app.get('/api/lotes/reservados/consumidor/:consumidorId', async (request, reply) => {
+    const { consumidorId } = request.params as { consumidorId: string };
+
+    if (!consumidorId) {
+      return reply.status(400).send({ erro: 'ID do consumidor é obrigatório.' });
+    }
+
+    try {
+      const lotes = await prisma.lote.findMany({
+        where: {
+          consumerId: consumidorId,
+          status: {
+            in: ['RESERVADO', 'ANALISE_CLIENTE', 'RECUSADO_CLIENTE']
+          }
+        } as any, // <-- Adicione 'as any' para contornar o LoteWhereInput
+        include: {
+          fazenda: {
+            include: {
+              usuario: {
+                select: { nome: true, telefone: true, email: true }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' } as any // <-- Usa createdAt como ordenação segura
+      });
+
+      return reply.send({ sucesso: true, lotes });
+    } catch (error) {
+      console.error('Erro ao buscar reservas do consumidor:', error);
+      return reply.status(500).send({ erro: 'Falha ao buscar lotes reservados.' });
+    }
+  });
+
+    // 2. NOVA ROTA: Buscar Histórico de Compras Concluídas do Consumidor (status = VENDIDO)
+    app.get('/api/lotes/compras/consumidor/:consumidorId', async (request, reply) => {
+    const { consumidorId } = request.params as { consumidorId: string };
+
+    if (!consumidorId) {
+      return reply.status(400).send({ erro: 'ID do consumidor é obrigatório.' });
+    }
+
+    try {
+      const compras = await prisma.lote.findMany({
+        where: {
+          consumerId: consumidorId,
+          status: 'VENDIDO'
+        } as any, // <-- Adicione 'as any'
+        include: {
+          fazenda: {
+            include: {
+              usuario: {
+                select: { nome: true, telefone: true, email: true }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' } as any // <-- Ordenação por createdAt
+      });
+
+      return reply.send({ sucesso: true, compras });
+    } catch (error) {
+      console.error('Erro ao buscar histórico de compras do consumidor:', error);
+      return reply.status(500).send({ erro: 'Falha ao buscar compras anteriores.' });
+    }
+  });
+
+  // ROTA: Atualizar Status do Lote (Usada pelo Produtor para confirmar venda ou alterar estado)
+  app.put('/api/lotes/:id/status', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { status, quantidadeCabecasFinal } = request.body as any;
+
+    if (!id || !status) {
+      return reply.status(400).send({ erro: 'ID do lote e novo status são obrigatórios.' });
+    }
+
+    try {
+      const loteAtualizado = await prisma.lote.update({
+        where: { id },
+        data: {
+          status,
+          quantidadeCabecas: quantidadeCabecasFinal ? Number(quantidadeCabecasFinal) : undefined
+        }
+      });
+
+      return reply.send({
+        sucesso: true,
+        mensagem: 'Status do lote atualizado com sucesso!',
+        lote: loteAtualizado
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar status do lote:', error);
+      return reply.status(500).send({ erro: 'Falha ao atualizar status do lote.' });
+    }
+  });
+
+  // ROTA: Produtor confirma/ajusta valores de um Lote Reservado
+   app.put('/api/lotes/:id/confirmar-negociacao', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { quantidadeCabecas, valorTotal } = request.body as any;
+
+    if (!id) {
+      return reply.status(400).send({ erro: 'ID do lote é obrigatório.' });
+    }
+
+    try {
+      const loteAtualizado = await prisma.lote.update({
+        where: { id },
+        data: {
+          quantidadeCabecas: quantidadeCabecas ? Number(quantidadeCabecas) : undefined,
+          valorTotal: valorTotal !== undefined ? Number(valorTotal) : undefined,
+          status: 'ANALISE_CLIENTE' 
+        }
+      });
+
+      return reply.send({
+        sucesso: true,
+        mensagem: 'Valores do lote atualizados e proposta enviada ao consumidor!',
+        lote: loteAtualizado
+      });
+    } catch (error) {
+      console.error('Erro ao confirmar negociação do lote:', error);
+      return reply.status(500).send({ erro: 'Falha ao atualizar negociação do lote.' });
+    }
+  });
+
+  app.put('/api/lotes/:id/aceitar-proposta', async (request, reply) => {
+  const { id } = request.params as { id: string };
+
+  try {
+    const loteAtualizado = await prisma.lote.update({
+      where: { id },
+      data: { status: 'VENDIDO' }
+    });
+
+    return reply.send({
+      sucesso: true,
+      mensagem: 'Proposta aceita! Compra confirmada.',
+      lote: loteAtualizado
+    });
+  } catch (error) {
+    console.error('Erro ao aceitar proposta:', error);
+    return reply.status(500).send({ erro: 'Falha ao aceitar proposta.' });
+  }
+});
+
+// ROTA 2: Consumidor RECUSA a proposta (Trata 1ª e 2ª recusa)
+  app.put('/api/lotes/:id/recusar-proposta', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    try {
+      // 'as any' previne o erro de compilação do TypeScript enquanto os tipos do Prisma são regerados
+      const loteExistente = (await prisma.lote.findUnique({ where: { id } })) as any;
+
+      if (!loteExistente) {
+        return reply.status(404).send({ erro: 'Lote não encontrado.' });
+      }
+
+      // Leitura da contagem de recusas
+      const recusasAtuais = Number(loteExistente.recusasCount || 0) + 1;
+
+      if (recusasAtuais >= 2) {
+        // 2ª RECUSA: Cancela o processo, desvincula o consumidor e devolve o lote ao mercado
+        const loteCancelado = await prisma.lote.update({
+          where: { id },
+          data: {
+            status: 'DISPONIVEL',
+            consumerId: null,
+            consumerName: null,
+            consumerCompany: null,
+            consumerPhone: null,
+            recusasCount: 0 // Reseta o contador para futuros compradores
+          } as any
+        });
+
+        return reply.send({
+          sucesso: true,
+          segundaRecusa: true,
+          mensagem: 'Processo de compra cancelado. O lote retornou ao mercado público.',
+          lote: loteCancelado
+        });
+      } else {
+        // 1ª RECUSA: Retorna ao produtor para reavaliar e enviar nova proposta
+        const loteAtualizado = await prisma.lote.update({
+          where: { id },
+          data: {
+            status: 'RECUSADO_CLIENTE',
+            recusasCount: recusasAtuais
+          } as any
+        });
+
+        return reply.send({
+          sucesso: true,
+          segundaRecusa: false,
+          mensagem: 'Proposta recusada. Lote enviado de volta ao produtor.',
+          lote: loteAtualizado
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao recusar proposta:', error);
+      return reply.status(500).send({ erro: 'Falha ao processar recusa da proposta.' });
     }
   });
 }

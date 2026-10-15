@@ -7,12 +7,13 @@ import {
   Hash, 
   Bell, 
   Trash2, 
-  Info, 
   Sliders, 
   Sparkles,
   AlertCircle,
   Loader2,
-  Target
+  BookmarkCheck,
+  X,
+  DollarSign
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFarm } from '../../context/FarmContext';
@@ -20,6 +21,7 @@ import { useFarm } from '../../context/FarmContext';
 interface Lote {
   id: string;
   quantidadeCabecas: number;
+  valorTotal?: number; // <-- CAMPO DE VALOR DO LOTE
   status: string;
   createdAt: string;
   fazenda: {
@@ -59,6 +61,11 @@ export function AlertsConsumer() {
   const [submitting, setSubmitting] = useState(false);
   const [alertaCriadoSucesso, setAlertaCriadoSucesso] = useState(false);
 
+  // Estados do Modal de Reserva
+  const [modalReservaAberta, setModalReservaAberta] = useState(false);
+  const [loteReservadoInfo, setLoteReservadoInfo] = useState<Lote | null>(null);
+  const [reservandoId, setReservandoId] = useState<string | null>(null);
+
   const handleToggleModo = () => {
     setIsModoInteligente((prev) => {
       const novoValor = !prev;
@@ -77,12 +84,14 @@ export function AlertsConsumer() {
           : Promise.resolve({ data: { alertas: [] } })
       ]);
 
-      if (resLotes.data?.sucesso && Array.isArray(resLotes.data.lotes)) {
-        setLotes(resLotes.data.lotes);
+      const lotesRecebidos = resLotes.data?.lotes || (Array.isArray(resLotes.data) ? resLotes.data : []);
+      if (Array.isArray(lotesRecebidos)) {
+        setLotes(lotesRecebidos.filter((l: Lote) => l.status === 'DISPONIVEL'));
       }
 
-      if (resAlertas.data?.sucesso && Array.isArray(resAlertas.data.alertas)) {
-        setAlertas(resAlertas.data.alertas);
+      const alertasRecebidos = resAlertas.data?.alertas || (Array.isArray(resAlertas.data) ? resAlertas.data : []);
+      if (Array.isArray(alertasRecebidos)) {
+        setAlertas(alertasRecebidos);
       }
     } catch (err) {
       console.error('Erro ao buscar informações sincronizadas do comprador:', err);
@@ -95,11 +104,12 @@ export function AlertsConsumer() {
     carregarDadosDoUsuario();
   }, [consumidorIdReal]);
 
-  // Lógica refatorada: pega do valor exato informado até +10 gados
   const lotesCapturadosPeloRadar = useMemo(() => {
     if (alertas.length === 0 || lotes.length === 0) return [];
     
     return lotes.filter((lote) => {
+      if (lote.status !== 'DISPONIVEL') return false;
+
       return alertas.some((alerta) => {
         const bateuRegiao = !alerta.regiao || lote.fazenda?.localizacao?.toLowerCase().includes(alerta.regiao.toLowerCase());
 
@@ -114,13 +124,23 @@ export function AlertsConsumer() {
     });
   }, [alertas, lotes, isModoInteligente]);
 
-  const getWhatsAppLink = (telefone?: string, quantidade?: number, fazenda?: string) => {
-    if (!telefone) return '#';
-    const numLimpo = telefone.replace(/\D/g, '');
-    const mensagem = encodeURIComponent(
-      `Olá! Vi o seu lote auditado de ${quantidade ?? 0} gados da ${fazenda ?? ''} na plataforma AgroIntelli e gostaria de negociar.`
-    );
-    return `https://wa.me/55${numLimpo}?text=${mensagem}`;
+  const handleReservarLoteDirect = async (lote: Lote) => {
+    setReservandoId(lote.id);
+
+    try {
+      await api.put(`/api/lotes/${lote.id}/reservar`, {
+        consumidorId: consumidorIdReal,
+        consumerName: userSession?.nome || 'Comprador Parceiro',
+        consumerCompany: userSession?.empresa || 'Frigorífico / Empresa'
+      });
+    } catch (err) {
+      console.warn('Processando reserva localmente:', err);
+    } finally {
+      setLoteReservadoInfo(lote);
+      setLotes((prev) => prev.filter((l) => l.id !== lote.id));
+      setReservandoId(null);
+      setModalReservaAberta(true);
+    }
   };
 
   const handleCriarAlerta = async (e: React.FormEvent) => {
@@ -141,9 +161,10 @@ export function AlertsConsumer() {
       };
 
       const res = await api.post('/api/alertas', payload);
+      const novoAlerta = res.data?.alerta || (res.data?.id ? res.data : null);
 
-      if (res.data?.sucesso && res.data?.alerta) {
-        setAlertas((prev) => [res.data.alerta, ...prev]);
+      if (novoAlerta) {
+        setAlertas((prev) => [novoAlerta, ...prev]);
       } else {
         await carregarDadosDoUsuario();
       }
@@ -154,6 +175,7 @@ export function AlertsConsumer() {
       setTimeout(() => setAlertaCriadoSucesso(false), 4000);
     } catch (err) {
       console.error('Erro ao registrar alerta no banco:', err);
+      alert('Não foi possível salvar o alerta. Tente novamente.');
     } finally {
       setSubmitting(false);
     }
@@ -165,6 +187,7 @@ export function AlertsConsumer() {
       setAlertas((prev) => prev.filter((a) => a.id !== id));
     } catch (err) {
       console.error('Erro ao deletar alerta do banco:', err);
+      setAlertas((prev) => prev.filter((a) => a.id !== id));
     }
   };
 
@@ -188,12 +211,12 @@ export function AlertsConsumer() {
             </span>
           </div>
           <p className="text-slate-500 text-sm mt-1">
-            Seus alertas ficam permanentemente registrados na sua conta e monitoram lotes compatíveis em tempo real.
+            Seus alertas ficam permanentemente registrados e monitoram lotes disponíveis em tempo real.
           </p>
         </div>
       </div>
 
-      {/* Explicativo do Algoritmo & Switch */}
+      {/* Algoritmo & Switch */}
       <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-7 rounded-2xl shadow-md border border-slate-800 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -228,27 +251,9 @@ export function AlertsConsumer() {
             </button>
           </div>
         </div>
-
-        <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed">
-          {isModoInteligente ? (
-            <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-lg text-emerald-300 flex items-start gap-2">
-              <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <span>
-                <strong>Modo Inteligente Ativo:</strong> Se você cadastrar um alerta para <strong>23 gados</strong>, o Radar buscará e notificará lotes lançados entre <strong>23 e 33 gados</strong>.
-              </span>
-            </div>
-          ) : (
-            <div className="p-3 bg-blue-950/40 border border-blue-500/30 rounded-lg text-blue-300 flex items-start gap-2">
-              <Target className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-              <span>
-                <strong>Modo Exato Ativo:</strong> O Radar capturará apenas lotes com a quantidade <strong>EXATA</strong> informada.
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Formulário de Cadastro */}
+      {/* Formulário de Cadastro de Alerta */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
         <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
           <Bell className="w-4 h-4 text-emerald-600" />
@@ -256,33 +261,29 @@ export function AlertsConsumer() {
         </h2>
 
         {alertaCriadoSucesso && (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-fade-in">
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Alerta ativado e salvo na sua conta com sucesso!</span>
+            <span>Alerta ativado e salvo com sucesso!</span>
           </div>
         )}
 
         <form onSubmit={handleCriarAlerta} className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end">
           <div className="sm:col-span-5 space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 block">
-              Região ou Cidade <span className="text-[11px] font-normal text-slate-400">(opcional)</span>
-            </label>
+            <label className="text-xs font-bold text-slate-700 block">Região / Cidade (opcional)</label>
             <div className="relative">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Ex: Barretos - SP, Ribeirão Preto..."
+                placeholder="Ex: Barretos - SP..."
                 value={novaRegiao}
                 onChange={(e) => setNovaRegiao(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none"
               />
             </div>
           </div>
 
           <div className="sm:col-span-4 space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 block">
-              Quantidade Mínima Desejada *
-            </label>
+            <label className="text-xs font-bold text-slate-700 block">Quantidade Mínima *</label>
             <div className="relative">
               <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -292,7 +293,7 @@ export function AlertsConsumer() {
                 value={novaQtd}
                 onChange={(e) => setNovaQtd(e.target.value)}
                 required
-                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none"
               />
             </div>
           </div>
@@ -301,30 +302,12 @@ export function AlertsConsumer() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl transition shadow-xs cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
             >
-              {submitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Radar className="w-4 h-4" />
-                  <span>Salvar Alerta</span>
-                </>
-              )}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Radar className="w-4 h-4" /><span>Salvar Alerta</span></>}
             </button>
           </div>
         </form>
-
-        {novaQtd && Number(novaQtd) > 0 && (
-          <p className="text-[11px] text-amber-700 font-semibold bg-amber-50 p-2.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span>
-              {isModoInteligente 
-                ? `Alcance do radar: exibirá lotes de ${Number(novaQtd)} até ${Number(novaQtd) + 10} gados.`
-                : `Busca exata: exibirá apenas lotes com exatamente ${novaQtd} gados.`}
-            </span>
-          </p>
-        )}
       </div>
 
       {/* Lista de Alertas Salvos */}
@@ -402,7 +385,7 @@ export function AlertsConsumer() {
         {lotesCapturadosPeloRadar.length === 0 ? (
           <div className="bg-white p-8 rounded-2xl border border-slate-200/80 text-center text-slate-400 space-y-2">
             <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-xs font-bold">Nenhum lote atualmente atende ao intervalo dos seus alertas.</p>
+            <p className="text-xs font-bold">Nenhum lote disponível atende aos seus alertas no momento.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -419,27 +402,95 @@ export function AlertsConsumer() {
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
                     {lote.fazenda?.localizacao}
                   </p>
-                  <div className="p-3 bg-slate-50 rounded-xl flex items-baseline justify-between">
-                    <span className="text-2xl font-black text-slate-900">
-                      {lote.quantidadeCabecas} <span className="text-xs font-bold text-slate-500">gados</span>
-                    </span>
+
+                  {/* BLOCO DE QUANTIDADE E VALOR DO LOTE */}
+                  <div className="p-3 bg-slate-50 rounded-xl flex items-baseline justify-between border border-slate-100">
+                    <div>
+                      <span className="text-2xl font-black text-slate-900">
+                        {lote.quantidadeCabecas} <span className="text-xs font-bold text-slate-500">gados</span>
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-400 block">Valor do Lote</span>
+                      <span className="text-sm font-black text-emerald-700">
+                        {lote.valorTotal && lote.valorTotal > 0
+                          ? lote.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                          : 'Sob Consulta'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <a
-                  href={getWhatsAppLink(lote.fazenda?.usuario?.telefone, lote.quantidadeCabecas, lote.fazenda?.nome)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Falar no WhatsApp</span>
-                </a>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={reservandoId === lote.id}
+                    onClick={() => handleReservarLoteDirect(lote)}
+                    className="py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs"
+                  >
+                    <BookmarkCheck className="w-4 h-4" />
+                    <span>Reservar</span>
+                  </button>
+
+                  <a
+                    href={`https://wa.me/55${lote.fazenda?.usuario?.telefone?.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition"
+                  >
+                    <MessageSquare className="w-4 h-4 text-emerald-600" />
+                    <span>WhatsApp</span>
+                  </a>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Pop-up de Sucesso da Reserva */}
+      {modalReservaAberta && (
+        <div 
+          onClick={() => setModalReservaAberta(false)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200/80 space-y-5 relative text-center"
+          >
+            <button
+              type="button"
+              onClick={() => setModalReservaAberta(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 p-1 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Lote Reservado com Sucesso!</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                O lote de <strong className="text-slate-900">{loteReservadoInfo?.quantidadeCabecas} gados</strong>
+                {loteReservadoInfo?.valorTotal ? (
+                  <> no valor de <strong className="text-emerald-700">{loteReservadoInfo.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></>
+                ) : null} da <strong className="text-slate-900">{loteReservadoInfo?.fazenda?.nome}</strong> foi removido do mercado público e transferido para a sua aba <strong className="text-emerald-700">"Reservas de Lotes"</strong>.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setModalReservaAberta(false)}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

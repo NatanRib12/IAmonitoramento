@@ -26,9 +26,12 @@ model Chamado {
   status      String   @default("Em análise")
   fazendaNome String?  @default("Não especificada")
   
-  usuarioId   String
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId   String?
+  usuario     Usuario?  @relation(fields: [usuarioId], references: [id])
   
+  consumidorId String?
+  consumidor  Consumidor? @relation(fields: [consumidorId], references: [id], onDelete: Cascade)
+
   createdAt   DateTime @default(now())
 }
 
@@ -49,14 +52,22 @@ model Fazenda {
 model Lote {
   id                 String   @id @default(uuid())
   quantidadeCabecas  Int
+  valorTotal         Float?   @default(0)
+  status             String   @default("RASCUNHO")
+  recusasCount       Int      @default(0) // <-- Campo de contagem de recusas
   videoOriginalUrl   String?
   videoProcessadoUrl String?
-  status             String   @default("AUDITADO") 
-  
+
   fazendaId          String
   fazenda            Fazenda  @relation(fields: [fazendaId], references: [id])
-  
+
+  consumerId         String?
+  consumerName       String?
+  consumerCompany    String?
+  consumerPhone      String?
+
   createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
 }
 
 model Consumidor {
@@ -67,6 +78,7 @@ model Consumidor {
   senhaHash String
   
   alertas   AlertaRadar[]
+  chamados  Chamado[]
   createdAt DateTime      @default(now())
 }
 

@@ -21,6 +21,9 @@ import { SideMenuConsumer } from './components/SideMenuConsumer';
 // Telas Autenticadas do Comprador
 import { ConsumidorDashboard } from './pages/Consumer/ConsumidorDashboard';
 import { AlertsConsumer } from './pages/Consumer/AlertsConsumer';
+import { PreviousPurchases } from './pages/Consumer/PreviousPurchases';
+import { ReservedLots } from './pages/Consumer/ReservedLots';
+import { SupportCenterConsumer } from './pages/Consumer/SupportCenterConsumer';
 
 // Telas de Autenticação Universais
 import { Login } from './pages/Auth/Login';
@@ -114,7 +117,9 @@ function AppContent() {
         >
           {subSectionConsumer === 'lotes-disponiveis' && <ConsumidorDashboard />}
           {subSectionConsumer === 'radar-alertas' && <AlertsConsumer />}
-          {subSectionConsumer === 'central-suporte' && <SupportCenter />}
+          {subSectionConsumer === 'compras-anteriores' && <PreviousPurchases />}
+          {subSectionConsumer === 'reservas-lotes' && <ReservedLots />}
+          {subSectionConsumer === 'central-suporte' && <SupportCenterConsumer/>}
         </SideMenuConsumer>
       )}
     </>

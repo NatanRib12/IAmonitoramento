@@ -9,7 +9,8 @@ import {
   Bell, 
   Radio, 
   ShieldCheck,
-  Tractor
+  Tractor,
+  DollarSign
 } from 'lucide-react';
 import { useFarm } from '../../context/FarmContext';
 import { useVideoProcessing, type AnalyzedVideoItem } from '../../context/VideoProcessing';
@@ -22,6 +23,7 @@ export function ProcessedVideo() {
     deletarAnalyzedVideo, 
     editarAnalyzedVideo,
     notificarItemGaleria,
+    setValorLoteAnuncio,
     modalContagemAberta,
     tempoRestante,
     cancelarContagemRegressiva
@@ -41,8 +43,9 @@ export function ProcessedVideo() {
 
   const [playingVideoUrl, setPlayingVideoUrl] = useState<string | null>(null);
 
-  // Pop-up de confirmação do Ponto 3
+  // Pop-up de confirmação de notificação
   const [videoParaNotificar, setVideoParaNotificar] = useState<AnalyzedVideoItem | null>(null);
+  const [valorLoteInput, setValorLoteInput] = useState<string>('');
 
   // Lógica da faixa de gado
   let faixaMin = 0;
@@ -80,10 +83,40 @@ export function ProcessedVideo() {
     }
   };
 
+  const handleAbrirNotificacao = (video: AnalyzedVideoItem) => {
+    setVideoParaNotificar(video);
+    setValorLoteInput(video.valorTotal ? video.valorTotal.toString() : '');
+  };
+
+  // Bloqueia teclas de sinais negativos e notação científica no teclado
+  const handlePreventNegativeKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (['-', 'e', 'E', '+'].includes(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  // Trata a alteração do input do valor
+  const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === '') {
+      setValorLoteInput('');
+      return;
+    }
+    const num = Number(val);
+    if (!isNaN(num) && num >= 0) {
+      setValorLoteInput(val);
+    }
+  };
+
+  // Regra estrita: Valor deve estar preenchido e ser maior que zero (R$ > 0)
+  const isValorValido = valorLoteInput !== '' && Number(valorLoteInput) > 0;
+
   const handleConfirmarNotificacao = () => {
-    if (videoParaNotificar) {
+    if (videoParaNotificar && isValorValido) {
+      setValorLoteAnuncio(valorLoteInput);
       notificarItemGaleria(videoParaNotificar.id);
       setVideoParaNotificar(null);
+      setValorLoteInput('');
     }
   };
 
@@ -96,11 +129,11 @@ export function ProcessedVideo() {
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             Vídeos Anteriores
           </h1>
-            <span className="inline-flex items-center gap-1.5 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs">
-              <Tractor className="w-4 h-4 text-emerald-700 shrink-0" />
-              <span>Fazenda: {activeFarm?.name}</span>
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-1.5 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs">
+            <Tractor className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>Fazenda: {activeFarm?.name}</span>
+          </span>
+        </div>
         <p className="text-slate-500 text-sm mt-1">
           Biblioteca de vídeos auditados pela IA. Notifique os parceiros para disponibilizar o lote no mercado.
         </p>
@@ -189,13 +222,13 @@ export function ProcessedVideo() {
                   {video.cattleCount} cabeças
                 </div>
 
-                {/* PONTO 3: ÍCONES DE AÇÃO AO PASSAR O MOUSE (SININHO, LÁPIS E LIXEIRA) */}
+                {/* ÍCONES DE AÇÃO AO PASSAR O MOUSE (SININHO, LÁPIS E LIXEIRA) */}
                 <div className="absolute bottom-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   
-                  {/* ÍCONE DE SININHO: Apresentado apenas para vídeos ainda NÃO lançados */}
+                  {/* ÍCONE DE SININHO */}
                   {!video.isNotified ? (
                     <button
-                      onClick={() => setVideoParaNotificar(video)}
+                      onClick={() => handleAbrirNotificacao(video)}
                       title="Lançar notificação do lote para parceiros"
                       className="p-2 bg-white/90 hover:bg-emerald-600 hover:text-white text-slate-700 rounded-xl shadow-md transition cursor-pointer"
                     >
@@ -250,10 +283,10 @@ export function ProcessedVideo() {
         </div>
       )}
 
-      {/* PONTO 3: POP-UP DE CONFIRMAÇÃO DE NOTIFICAÇÃO DO LOTE */}
+      {/* POP-UP DE CONFIRMAÇÃO COM INPUT DE VALOR DO LOTE */}
       {videoParaNotificar && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center space-y-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center space-y-4">
             <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
               <Bell className="w-6 h-6" />
             </div>
@@ -263,19 +296,54 @@ export function ProcessedVideo() {
             </h3>
 
             <p className="text-xs text-slate-500 leading-relaxed">
-              Deseja notificar os compradores parceiros sobre o lote <strong className="text-slate-900">{videoParaNotificar.title}</strong> com contagem auditada de <strong className="text-slate-900">{videoParaNotificar.cattleCount} cabeças</strong>?
+              Deseja notificar os compradores parceiros sobre o lote <strong className="text-slate-900">{videoParaNotificar.title}</strong> com contagem auditada de <strong className="text-emerald-700 font-bold">{videoParaNotificar.cattleCount} cabeças</strong>?
             </p>
+
+            {/* INPUT DE VALOR DO LOTE */}
+            <div className="text-left space-y-1.5 pt-1">
+              <label className="text-xs font-bold text-slate-700 block">
+                Informe o Valor Total do Lote (R$) *
+              </label>
+              <div className="relative">
+                <DollarSign className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  onKeyDown={handlePreventNegativeKeys}
+                  value={valorLoteInput}
+                  onChange={handleValorChange}
+                  placeholder="Ex: 85000.00"
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
+                />
+              </div>
+              {!isValorValido && valorLoteInput !== '' && (
+                <p className="text-[11px] text-rose-500 font-semibold">
+                  O valor deve ser maior que R$ 0,00.
+                </p>
+              )}
+            </div>
 
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => setVideoParaNotificar(null)}
+                type="button"
+                onClick={() => {
+                  setVideoParaNotificar(null);
+                  setValorLoteInput('');
+                }}
                 className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
               >
                 Cancelar
               </button>
               <button
+                type="button"
+                disabled={!isValorValido}
                 onClick={handleConfirmarNotificacao}
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                className={`flex-1 py-2.5 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 ${
+                  !isValorValido
+                    ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                }`}
               >
                 <Check className="w-4 h-4" /> Sim, Notificar
               </button>
@@ -284,7 +352,7 @@ export function ProcessedVideo() {
         </div>
       )}
 
-      {/* POP-UP DA CONTAGEM REGRESSIVA DE 5 SEGUNDOS (GLOBAL DA APLICAÇÃO) */}
+      {/* POP-UP DA CONTAGEM REGRESSIVA DE 5 SEGUNDOS */}
       {modalContagemAberta && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center space-y-4">

@@ -15,7 +15,10 @@ import {
   ShoppingBag,
   AlertCircle,
   X,
-  BookmarkCheck
+  BookmarkCheck,
+  Loader2,
+  DollarSign,
+  RotateCw // <-- ÍCONE DE REFRESH ADICIONADO
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFarm } from '../../context/FarmContext';
@@ -23,7 +26,7 @@ import { useFarm } from '../../context/FarmContext';
 interface Lote {
   id: string;
   quantidadeCabecas: number;
-  videoProcessadoUrl?: string | null;
+  valorTotal?: number;
   status: string;
   createdAt: string;
   fazenda: {
@@ -37,91 +40,50 @@ interface Lote {
   }
 }
 
-const MOCK_LOTES: Lote[] = [
-  {
-    id: 'lote-01',
-    quantidadeCabecas: 13,
-    videoProcessadoUrl: null,
-    status: 'DISPONIVEL',
-    createdAt: new Date().toISOString(),
-    fazenda: {
-      nome: 'Fazenda Bela Vista',
-      localizacao: 'Ouro Preto - MG',
-      usuario: {
-        nome: 'Natan Santos',
-        telefone: '(16) 99876-5432',
-        email: 'produtor@agrointelli.com',
-      }
-    }
-  },
-  {
-    id: 'lote-02',
-    quantidadeCabecas: 45,
-    videoProcessadoUrl: null,
-    status: 'DISPONIVEL',
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    fazenda: {
-      nome: 'Fazenda Santa Maria',
-      localizacao: 'Ribeirão Preto - SP',
-      usuario: {
-        nome: 'Carlos Eduardo Silveira',
-        telefone: '(16) 99123-8899',
-        email: 'carlos@santamaria.com.br',
-      }
-    }
-  },
-  {
-    id: 'lote-03',
-    quantidadeCabecas: 120,
-    videoProcessadoUrl: null,
-    status: 'DISPONIVEL',
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    fazenda: {
-      nome: 'Estância Boa Vista',
-      localizacao: 'Barretos - SP',
-      usuario: {
-        nome: 'Mariana Ribeiro',
-        telefone: '(17) 99765-4321',
-        email: 'mariana@boavista.com',
-      }
-    }
-  }
-];
-
 export function ConsumidorDashboard() {
   const { userSession } = useFarm();
-  const [lotes, setLotes] = useState<Lote[]>(MOCK_LOTES);
-  const [loteSelecionado, setLoteSelecionado] = useState<Lote | null>(MOCK_LOTES[0]);
+  const [lotes, setLotes] = useState<Lote[]>([]);
+  const [loteSelecionado, setLoteSelecionado] = useState<Lote | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Filtros de busca
   const [filterFazenda, setFilterFazenda] = useState('');
   const [filterData, setFilterData] = useState('');
   const [filterQtd, setFilterQtd] = useState<number | ''>('');
 
-  // Estado do Pop-up de Reserva Concluída
+  // Estado do Modal de Reserva
   const [modalReservaAberta, setModalReservaAberta] = useState(false);
   const [loteReservadoInfo, setLoteReservadoInfo] = useState<Lote | null>(null);
   const [reservando, setReservando] = useState(false);
 
-  useEffect(() => {
-    if (api && typeof api.get === 'function') {
-      api.get('/api/lotes/disponiveis')
-        .then((res) => {
-          if (res?.data?.sucesso && Array.isArray(res.data.lotes) && res.data.lotes.length > 0) {
-            setLotes(res.data.lotes);
-            setLoteSelecionado(res.data.lotes[0]);
-          }
-        })
-        .catch((err) => {
-          console.warn('Utilizando dados mockados de demonstração:', err);
-        });
+  const carregarLotesDisponiveis = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/lotes/disponiveis');
+      const lotesRecebidos = res.data?.lotes || (Array.isArray(res.data) ? res.data : []);
+      
+      const disponiveis = lotesRecebidos.filter((l: any) => l.status === 'DISPONIVEL').map((l: any) => ({
+        ...l,
+        valorTotal: Number(l.valorTotal || l.valor || l.valor_total || l.valorLote) || 0
+      }));
+
+      setLotes(disponiveis);
+      setLoteSelecionado(disponiveis.length > 0 ? disponiveis[0] : null);
+    } catch (err) {
+      console.error('Erro ao buscar lotes disponíveis:', err);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    carregarLotesDisponiveis();
   }, []);
 
   const lotesFiltrados = useMemo(() => {
     return lotes.filter((lote) => {
       if (lote.status !== 'DISPONIVEL') return false;
-      if (filterFazenda && !lote.fazenda.nome.toLowerCase().includes(filterFazenda.toLowerCase())) {
+      if (filterFazenda && !lote.fazenda?.nome?.toLowerCase().includes(filterFazenda.toLowerCase())) {
         return false;
       }
       if (filterData) {
@@ -145,23 +107,22 @@ export function ConsumidorDashboard() {
       await api.put(`/api/lotes/${loteSelecionado.id}/reservar`, {
         consumidorId: consumidorIdReal,
         consumerName: userSession?.nome || 'Comprador Parceiro',
-        consumerCompany: userSession?.empresa || 'Frigorífico Parceiro'
+        consumerCompany: userSession?.empresa || 'Frigorífico / Empresa'
       });
-    } catch (err) {
-      console.warn('Atualizando reservas no estado local:', err);
-    } finally {
+
       const loteReservado = { ...loteSelecionado, status: 'RESERVADO' };
       setLoteReservadoInfo(loteReservado);
-      
-      // Remove o lote da lista de disponíveis do mercado
-      setLotes((prev) => prev.filter((l) => l.id !== loteSelecionado.id));
-      
-      // Seleciona o próximo lote da lista se houver
-      const restantes = lotesFiltrados.filter((l) => l.id !== loteSelecionado.id);
+
+      const restantes = lotes.filter((l) => l.id !== loteSelecionado.id);
+      setLotes(restantes);
       setLoteSelecionado(restantes.length > 0 ? restantes[0] : null);
-      
-      setReservando(false);
+
       setModalReservaAberta(true);
+    } catch (err) {
+      console.error('Erro ao efetuar reserva:', err);
+      alert('Não foi possível reservar o lote. Tente novamente.');
+    } finally {
+      setReservando(false);
     }
   };
 
@@ -174,7 +135,7 @@ export function ConsumidorDashboard() {
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto font-sans text-slate-800">
       
-      {/* Cabeçalho */}
+      {/* Cabeçalho com Botão de Refresh */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/60">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -190,6 +151,18 @@ export function ConsumidorDashboard() {
             Explore as oportunidades de compra auditadas por visão computacional e reserve o lote desejado.
           </p>
         </div>
+
+        {/* BOTÃO DE REFRESH DO CONSUMIDOR */}
+        <button
+          type="button"
+          disabled={loading}
+          onClick={carregarLotesDisponiveis}
+          title="Buscar novos lotes lançados no mercado"
+          className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shadow-2xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60 shrink-0 self-start sm:self-center"
+        >
+          <RotateCw className={`w-4 h-4 text-emerald-600 ${loading ? 'animate-spin' : ''}`} />
+          <span>{loading ? 'Buscando...' : 'Atualizar Mercado'}</span>
+        </button>
       </div>
 
       {/* Barra de Filtros */}
@@ -236,7 +209,7 @@ export function ConsumidorDashboard() {
             <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="number"
-              placeholder="Mínimo de gados (ex: 20)..."
+              placeholder="Mínimo de gados..."
               value={filterQtd}
               onChange={(e) => setFilterQtd(e.target.value ? Number(e.target.value) : '')}
               className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -245,167 +218,190 @@ export function ConsumidorDashboard() {
         </div>
       </div>
 
-      {/* Estrutura Principal */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Lista de Lotes */}
-        <div className="lg:col-span-5 space-y-3.5 max-h-[720px] overflow-y-auto pr-2">
-          {lotesFiltrados.length === 0 ? (
-            <div className="bg-white p-8 rounded-2xl border border-slate-200/80 text-center text-slate-400 space-y-2">
-              <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold">Nenhum lote disponível encontrado para os filtros informados.</p>
+      {loading && lotes.length === 0 ? (
+        <div className="bg-white p-12 rounded-2xl border border-slate-200/80 text-center text-slate-400 flex items-center justify-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+          <span className="text-xs font-bold">Carregando lotes do mercado...</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* Lista de Lotes */}
+          <div className="lg:col-span-5 space-y-3.5 max-h-[720px] overflow-y-auto pr-2">
+            {lotesFiltrados.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl border border-slate-200/80 text-center text-slate-400 space-y-2">
+                <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs font-bold">Nenhum lote disponível no mercado no momento.</p>
+              </div>
+            ) : (
+              lotesFiltrados.map((lote) => {
+                const isSelected = loteSelecionado?.id === lote.id;
+                const valorNum = Number(lote.valorTotal || 0);
+
+                return (
+                  <div
+                    key={lote.id}
+                    onClick={() => setLoteSelecionado(lote)}
+                    className={`p-4 rounded-2xl transition-all cursor-pointer border bg-white relative shadow-2xs ${
+                      isSelected
+                        ? 'border-emerald-600 ring-2 ring-emerald-500/20 bg-emerald-50/10'
+                        : 'border-slate-200/80 hover:border-slate-300 hover:shadow-xs'
+                    }`}
+                  >
+                    {isSelected && (
+                      <div className="absolute left-0 top-3 bottom-3 w-1 bg-emerald-600 rounded-r-full" />
+                    )}
+
+                    <div className="flex justify-between items-center gap-2 mb-2">
+                      <span className="text-xs font-extrabold text-slate-900 truncate">
+                        {lote.fazenda?.nome || 'Fazenda'}
+                      </span>
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shrink-0">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600" /> Auditado
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between mb-3">
+                      <div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-black text-slate-900 tracking-tight">
+                            {lote.quantidadeCabecas}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500">
+                            cabeças
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-extrabold text-emerald-700 mt-0.5 flex items-center gap-1">
+                          <DollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>
+                            {valorNum > 0
+                              ? valorNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                              : 'Sob Consulta'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        {new Date(lote.createdAt).toLocaleDateString('pt-BR')}
+                      </span>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="truncate font-semibold text-slate-700">
+                          {lote.fazenda?.usuario?.nome || 'Produtor'}
+                        </span>
+                      </div>
+                      <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'translate-x-1 text-emerald-600' : 'text-slate-400'}`} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Detalhes do Lote Selecionado */}
+          {loteSelecionado ? (
+            <div className="lg:col-span-7 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-6 min-h-[260px]">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-emerald-600" />
+                        Informações do Lote
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-medium block text-[11px]">Propriedade Rural:</span>
+                        <strong className="text-slate-900 font-extrabold text-base">{loteSelecionado.fazenda?.nome}</strong>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-slate-600 font-semibold pt-1">
+                        <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="text-sm">{loteSelecionado.fazenda?.localizacao}</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100">
+                        <span className="text-slate-400 font-medium block text-[11px]">Valor Anunciado do Lote:</span>
+                        <strong className="text-emerald-700 font-black text-xl">
+                          {Number(loteSelecionado.valorTotal) > 0
+                            ? Number(loteSelecionado.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                            : 'Sob Consulta / A Combinar'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md">
+                      Auditado por Visão Computacional
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-6 min-h-[260px]">
+                  <div className="space-y-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <User className="w-4 h-4 text-emerald-600" />
+                        Contato do Produtor
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-medium block text-[11px]">Vendedor / Responsável:</span>
+                        <strong className="text-slate-900 font-extrabold text-base">{loteSelecionado.fazenda?.usuario?.nome}</strong>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-slate-500 font-semibold pt-1">
+                        <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>Data de Publicação: {new Date(loteSelecionado.createdAt).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={reservando}
+                    onClick={handleReservarLote}
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {reservando ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookmarkCheck className="w-4 h-4" />}
+                    <span>{reservando ? 'Reservando...' : 'Reservar Lote'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-xs flex items-center gap-4 border border-slate-800">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
+                <div className="text-xs space-y-0.5">
+                  <p className="font-bold text-white">
+                    Lote Selecionado com {loteSelecionado.quantidadeCabecas} Gados
+                    {Number(loteSelecionado.valorTotal) > 0 ? ` • ${Number(loteSelecionado.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}
+                  </p>
+                  <p className="text-slate-400">
+                    Ao reservar este lote, ele sairá do mercado público e ficará sob sua responsabilidade na aba "Reservas de Lotes".
+                  </p>
+                </div>
+              </div>
             </div>
           ) : (
-            lotesFiltrados.map((lote) => {
-              const isSelected = loteSelecionado?.id === lote.id;
-              return (
-                <div
-                  key={lote.id}
-                  onClick={() => setLoteSelecionado(lote)}
-                  className={`p-4 rounded-2xl transition-all cursor-pointer border bg-white relative shadow-2xs ${
-                    isSelected
-                      ? 'border-emerald-600 ring-2 ring-emerald-500/20 bg-emerald-50/10'
-                      : 'border-slate-200/80 hover:border-slate-300 hover:shadow-xs'
-                  }`}
-                >
-                  {isSelected && (
-                    <div className="absolute left-0 top-3 bottom-3 w-1 bg-emerald-600 rounded-r-full" />
-                  )}
-
-                  <div className="flex justify-between items-center gap-2 mb-2">
-                    <span className="text-xs font-extrabold text-slate-900 truncate">
-                      {lote.fazenda.nome}
-                    </span>
-                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shrink-0">
-                      <ShieldCheck className="w-3 h-3 text-emerald-600" /> Auditado
-                    </span>
-                  </div>
-
-                  <div className="flex items-baseline justify-between mb-3">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-black text-slate-900 tracking-tight">
-                        {lote.quantidadeCabecas}
-                      </span>
-                      <span className="text-xs font-semibold text-slate-500">
-                        cabeças
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-semibold text-slate-400">
-                      {new Date(lote.createdAt).toLocaleDateString('pt-BR')}
-                    </span>
-                  </div>
-
-                  <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="truncate font-semibold text-slate-700">
-                        {lote.fazenda.usuario.nome}
-                      </span>
-                    </div>
-                    <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isSelected ? 'translate-x-1 text-emerald-600' : 'text-slate-400'}`} />
-                  </div>
-                </div>
-              );
-            })
+            <div className="lg:col-span-7 bg-white p-12 rounded-2xl border border-slate-200/80 text-center text-slate-400">
+              <p className="text-xs font-bold">Nenhum lote selecionado.</p>
+            </div>
           )}
         </div>
+      )}
 
-        {/* Detalhes do Lote Selecionado (Cards Alongados) */}
-        {loteSelecionado ? (
-          <div className="lg:col-span-7 space-y-6">
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              
-              {/* Card 1: Informações da Fazenda (Alongado) */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-6 min-h-[260px]">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Building2 className="w-4 h-4 text-emerald-600" />
-                      Informações da Fazenda
-                    </h3>
-                  </div>
-
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <span className="text-slate-400 font-medium block text-[11px]">Propriedade Rural:</span>
-                      <strong className="text-slate-900 font-extrabold text-base">{loteSelecionado.fazenda.nome}</strong>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-slate-600 font-semibold pt-1">
-                      <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span className="text-sm">{loteSelecionado.fazenda.localizacao}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100">
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md">
-                    Auditado por Visão Computacional
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 2: Contato & Reservar Lote (Alongado) */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-6 min-h-[260px]">
-                <div className="space-y-4">
-                  <div className="border-b border-slate-100 pb-3">
-                    <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <User className="w-4 h-4 text-emerald-600" />
-                      Contato do Produtor
-                    </h3>
-                  </div>
-
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <span className="text-slate-400 font-medium block text-[11px]">Vendedor / Responsável:</span>
-                      <strong className="text-slate-900 font-extrabold text-base">{loteSelecionado.fazenda.usuario.nome}</strong>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold pt-1">
-                      <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span>Data de Publicação: {new Date(loteSelecionado.createdAt).toLocaleDateString('pt-BR')}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Botão de Ação Principal: Reservar Lote */}
-                <button
-                  type="button"
-                  disabled={reservando}
-                  onClick={handleReservarLote}
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <BookmarkCheck className="w-4 h-4" />
-                  <span>{reservando ? 'Reservando...' : 'Reservar Lote'}</span>
-                </button>
-              </div>
-
-            </div>
-
-            {/* Banner Informativo Inferior */}
-            <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-xs flex items-center gap-4 border border-slate-800">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                <ShoppingBag className="w-5 h-5" />
-              </div>
-              <div className="text-xs space-y-0.5">
-                <p className="font-bold text-white">Lote Selecionado com {loteSelecionado.quantidadeCabecas} Gados</p>
-                <p className="text-slate-400">
-                  Ao clicar em "Reservar Lote", o item será removido do mercado público e ficará disponível para você na aba "Compras e Reservas de Lotes".
-                </p>
-              </div>
-            </div>
-
-          </div>
-        ) : (
-          <div className="lg:col-span-7 bg-white p-12 rounded-2xl border border-slate-200/80 text-center text-slate-400">
-            <p className="text-xs font-bold">Selecione um lote na lista para visualizar os detalhes.</p>
-          </div>
-        )}
-
-      </div>
-
-      {/* POP-UP DE SUCESSO AO RESERVAR LOTE */}
+      {/* POP-UP DE RESERVA */}
       {modalReservaAberta && (
         <div 
           onClick={() => setModalReservaAberta(false)}
@@ -430,19 +426,20 @@ export function ConsumidorDashboard() {
             <div className="space-y-2">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">Lote Reservado com Sucesso!</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                O lote de <strong className="text-slate-900">{loteReservadoInfo?.quantidadeCabecas} gados</strong> da <strong className="text-slate-900">{loteReservadoInfo?.fazenda?.nome}</strong> foi removido do mercado público e já está disponível em <strong className="text-emerald-700">"Compras e Reservas de Lotes"</strong>.
+                O lote de <strong className="text-slate-900">{loteReservadoInfo?.quantidadeCabecas} gados</strong>
+                {Number(loteReservadoInfo?.valorTotal) > 0 ? (
+                  <> no valor de <strong className="text-emerald-700">{Number(loteReservadoInfo?.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></>
+                ) : null} foi removido do mercado e transferido para a sua subseção <strong className="text-emerald-700">"Reservas de Lotes"</strong>.
               </p>
             </div>
 
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setModalReservaAberta(false)}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Fechar
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setModalReservaAberta(false)}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       )}
@@ -450,3 +447,5 @@ export function ConsumidorDashboard() {
     </div>
   );
 }
+
+export default ConsumidorDashboard;

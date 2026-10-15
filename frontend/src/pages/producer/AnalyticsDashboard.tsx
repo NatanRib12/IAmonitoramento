@@ -22,16 +22,17 @@ export interface OpenLot {
   title: string;
   quantity: number;
   publishedAt: string;
+  valorTotal?: number;
 }
 
 export interface ClosedSaleDetail {
   id: string;
-  data: string;             // ex: '07/10/2026'
-  comprador: string;        // ex: 'Restaurante Domingos'
-  valorNegociado: number;   // ex: 1400
-  quantidadeGado: number;   // ex: 5
-  monthIndex: number;       // 0 a 11
-  year: number;             // ex: 2026
+  data: string;
+  comprador: string;
+  valorNegociado: number;
+  quantidadeGado: number;
+  monthIndex: number;
+  year: number;
 }
 
 export interface MonthlySalesSummary {
@@ -47,47 +48,28 @@ const TODOS_OS_MESES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-// 3 DADOS MOCKADOS DE TESTE PARA AMBIENTE DE DESENVOLVIMENTO
-const DADOS_MOCKADOS_TESTE: ClosedSaleDetail[] = [
-  {
-    id: 'test-01',
-    data: '07/10/2026',
-    comprador: 'Restaurante Domingos',
-    valorNegociado: 1400,
-    quantidadeGado: 5,
-    monthIndex: 9, // Outubro
-    year: 2026
-  },
-  {
-    id: 'test-02',
-    data: '04/10/2026',
-    comprador: 'Churrascaria Silva & Filhos',
-    valorNegociado: 2800,
-    quantidadeGado: 10,
-    monthIndex: 9, // Outubro
-    year: 2026
-  },
-  {
-    id: 'test-03',
-    data: '28/09/2026',
-    comprador: 'Frigorífico Minerva - Unidade SP',
-    valorNegociado: 12500,
-    quantidadeGado: 45,
-    monthIndex: 8, // Setembro
-    year: 2026
-  }
-];
+// Função utilitária para aplicar a máscara de data DD/MM/AAAA automaticamente
+const aplicarMascaraData = (valor: string): string => {
+  const apenasNumeros = valor.replace(/\D/g, '').slice(0, 8);
 
-// CACHE EM MEMÓRIA DE SESSÃO (Mantém os dados salvos entre trocas de página)
+  if (apenasNumeros.length <= 2) {
+    return apenasNumeros;
+  }
+  if (apenasNumeros.length <= 4) {
+    return `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2)}`;
+  }
+  return `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2, 4)}/${apenasNumeros.slice(4)}`;
+};
+
 let cacheLotesSession: { farmId: string; lotes: any[] } | null = null;
 
 export const AnalyticsDashboard: React.FC = () => {
   const { activeFarm } = useFarm();
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
-  // Inicialização instantânea se houver dados no cache
   const hasCache = cacheLotesSession && cacheLotesSession.farmId === activeFarm?.id;
 
+  // Estado dos Lotes em Aberto (Disponíveis) - APENAS DADOS REAIS
   const [openLots, setOpenLots] = useState<OpenLot[]>(() => {
     if (!hasCache) return [];
     return cacheLotesSession!.lotes
@@ -96,13 +78,15 @@ export const AnalyticsDashboard: React.FC = () => {
         id: l.id,
         title: `Lote ${l.quantidadeCabecas} Gados`,
         quantity: l.quantidadeCabecas || 0,
-        publishedAt: new Date(l.createdAt).toLocaleDateString('pt-BR')
+        publishedAt: new Date(l.createdAt).toLocaleDateString('pt-BR'),
+        valorTotal: Number(l.valorTotal || l.valor || l.valor_total || l.valorLote) || 0
       }));
   });
 
+  // Estado das Vendas Fechadas (VENDIDO) - 100% REAIS (SEM MOCKS)
   const [closedSales, setClosedSales] = useState<ClosedSaleDetail[]>(() => {
-    if (!hasCache) return DADOS_MOCKADOS_TESTE;
-    const fechadosReais = cacheLotesSession!.lotes
+    if (!hasCache) return [];
+    return cacheLotesSession!.lotes
       .filter((l: any) => l.status === 'VENDIDO')
       .map((l: any) => {
         const dataObj = new Date(l.updatedAt || l.createdAt);
@@ -110,38 +94,33 @@ export const AnalyticsDashboard: React.FC = () => {
           id: l.id,
           data: dataObj.toLocaleDateString('pt-BR'),
           comprador: l.consumerName || 'Comprador Parceiro',
-          valorNegociado: Number(l.closedValue) || 0,
+          valorNegociado: Number(l.closedValue || l.valorTotal || l.valor || l.valor_total) || 0,
           quantidadeGado: Number(l.quantidadeCabecas) || 0,
           monthIndex: dataObj.getMonth(),
           year: dataObj.getFullYear()
         };
       });
-    return [...DADOS_MOCKADOS_TESTE, ...fechadosReais];
   });
 
   const [monthlyProgression, setMonthlyProgression] = useState<MonthlySalesSummary[]>([]);
   const [loading, setLoading] = useState<boolean>(!hasCache);
 
-  // Estados do POP-UP MODAL
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [activeMonthIndexModal, setActiveMonthIndexModal] = useState<number>(new Date().getMonth());
   
-  // Filtros internos do Pop-up
   const [showFilterBar, setShowFilterBar] = useState<boolean>(false);
   const [filterComprador, setFilterComprador] = useState<string>('');
   const [filterData, setFilterData] = useState<string>('');
 
-  // Paginação do Pop-up (10 vendas por página)
   const [currentPage, setCurrentPage] = useState<number>(1);
   const ITEMS_PER_PAGE = 10;
 
   const mesAtualIndex = new Date().getMonth();
 
-  // Sincroniza e busca atualizações do banco de dados (Em segundo plano se já houver cache)
+  // Busca dados atualizados da fazenda ativa diretamente na API
   useEffect(() => {
     if (!activeFarm?.id) return;
 
-    // Se não tiver cache, exibe o loading inicial. Se tiver, atualiza silenciosamente.
     if (!cacheLotesSession || cacheLotesSession.farmId !== activeFarm.id) {
       setLoading(true);
     }
@@ -150,7 +129,6 @@ export const AnalyticsDashboard: React.FC = () => {
       .then((res) => {
         const lotesBD = res.data?.lotes || [];
 
-        // Atualiza cache de sessão
         cacheLotesSession = {
           farmId: activeFarm.id,
           lotes: lotesBD
@@ -162,7 +140,8 @@ export const AnalyticsDashboard: React.FC = () => {
             id: l.id,
             title: `Lote ${l.quantidadeCabecas} Gados`,
             quantity: l.quantidadeCabecas || 0,
-            publishedAt: new Date(l.createdAt).toLocaleDateString('pt-BR')
+            publishedAt: new Date(l.createdAt).toLocaleDateString('pt-BR'),
+            valorTotal: Number(l.valorTotal || l.valor || l.valor_total || l.valorLote) || 0
           }));
 
         const fechadosReais: ClosedSaleDetail[] = lotesBD
@@ -173,7 +152,7 @@ export const AnalyticsDashboard: React.FC = () => {
               id: l.id,
               data: dataObj.toLocaleDateString('pt-BR'),
               comprador: l.consumerName || 'Comprador Parceiro',
-              valorNegociado: Number(l.closedValue) || 0,
+              valorNegociado: Number(l.closedValue || l.valorTotal || l.valor || l.valor_total) || 0,
               quantidadeGado: Number(l.quantidadeCabecas) || 0,
               monthIndex: dataObj.getMonth(),
               year: dataObj.getFullYear()
@@ -181,17 +160,13 @@ export const AnalyticsDashboard: React.FC = () => {
           });
 
         setOpenLots(abertosReais);
-        setClosedSales([...DADOS_MOCKADOS_TESTE, ...fechadosReais]);
+        setClosedSales(fechadosReais);
       })
-      .catch((err) => {
-        console.error('Erro ao buscar dados do banco:', err);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .catch((err) => console.error('Erro ao buscar dados reais do banco:', err))
+      .finally(() => setLoading(false));
   }, [activeFarm?.id]);
 
-  // Recalcula a progressão mensal
+  // Recalcula o progresso dos 12 meses baseado apenas em vendas reais
   useEffect(() => {
     const dozeMeses: MonthlySalesSummary[] = TODOS_OS_MESES.map((nomeMes, index) => {
       const vendasDoMes = closedSales.filter(
@@ -213,7 +188,6 @@ export const AnalyticsDashboard: React.FC = () => {
     setMonthlyProgression(dozeMeses);
   }, [closedSales, selectedYear]);
 
-  // Funções de controle do Modal
   const handleOpenModal = (monthIndex: number) => {
     setActiveMonthIndexModal(monthIndex);
     setCurrentPage(1);
@@ -232,18 +206,10 @@ export const AnalyticsDashboard: React.FC = () => {
     setCurrentPage(1);
   };
 
-  // Vendas do mês selecionado no modal com filtros de Comprador e Data
   const vendasDoMesAtivo = closedSales.filter((v) => {
     if (v.monthIndex !== activeMonthIndexModal || v.year !== selectedYear) return false;
-
-    if (filterComprador && !v.comprador.toLowerCase().includes(filterComprador.toLowerCase())) {
-      return false;
-    }
-
-    if (filterData && !v.data.includes(filterData)) {
-      return false;
-    }
-
+    if (filterComprador && !v.comprador.toLowerCase().includes(filterComprador.toLowerCase())) return false;
+    if (filterData && !v.data.includes(filterData)) return false;
     return true;
   });
 
@@ -260,7 +226,7 @@ export const AnalyticsDashboard: React.FC = () => {
     return (
       <div className="p-12 flex flex-col items-center justify-center space-y-3 font-sans text-slate-400">
         <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
-        <p className="text-xs font-bold">Carregando informações do dashboard...</p>
+        <p className="text-xs font-bold">Carregando informações reais do dashboard...</p>
       </div>
     );
   }
@@ -281,7 +247,7 @@ export const AnalyticsDashboard: React.FC = () => {
             </span>
           </div>
           <p className="text-slate-500 text-sm mt-1">
-            Visão geral da comercialização de gado e balanço financeiro da propriedade.
+            Visão geral da comercialização de gado e balanço financeiro real da propriedade.
           </p>
         </div>
 
@@ -294,11 +260,12 @@ export const AnalyticsDashboard: React.FC = () => {
             className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer"
           >
             <option value={2026}>2026</option>
+            <option value={2025}>2025</option>
           </select>
         </div>
       </div>
 
-      {/* Cards Indicadores Pessoais */}
+      {/* Indicadores Principais */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between">
           <div>
@@ -343,16 +310,14 @@ export const AnalyticsDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Seção de Gráficos e Informações Detalhadas */}
+      {/* Gráfico de Progressão Mensal */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-6">
         <div className="mb-6">
           <h2 className="text-lg font-bold text-slate-900">Progressão das Vendas do Mês</h2>
-          <p className="text-slate-500 text-sm">Quantidade de gados comercializados ao longo de todos os meses do ano.</p>
+          <p className="text-slate-500 text-sm">Quantidade real de gados comercializados ao longo dos meses.</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* Lado Esquerdo: Gráfico em Barras */}
           <div className="lg:col-span-7 space-y-4 lg:border-r lg:border-slate-100 lg:pr-8">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               Volume de Gados Vendidos
@@ -361,7 +326,6 @@ export const AnalyticsDashboard: React.FC = () => {
             <div className="space-y-3 pt-1 max-h-[460px] overflow-y-auto pr-2">
               {monthlyProgression.map((item) => {
                 const percentage = maxGados > 0 ? Math.round((item.totalGados / maxGados) * 100) : 0;
-                
                 return (
                   <div key={item.monthIndex} className="space-y-1">
                     <div className="flex justify-between text-xs font-medium">
@@ -380,7 +344,6 @@ export const AnalyticsDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Lado Direito: Informações Detalhadas (Mês + Botão "Mais Informações") */}
           <div className="lg:col-span-5 space-y-3">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               Informações Detalhadas
@@ -408,11 +371,10 @@ export const AnalyticsDashboard: React.FC = () => {
               ))}
             </div>
           </div>
-
         </div>
       </div>
 
-      {/* Grade de Lotes em Aberto e Fechados */}
+      {/* Resumo dos Lotes em Aberto e Fechados */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Lotes em Aberto */}
@@ -423,34 +385,50 @@ export const AnalyticsDashboard: React.FC = () => {
               <h2 className="text-base font-bold text-slate-900">Lotes em Aberto (Anunciados)</h2>
             </div>
             <span className="text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
-              Disponíveis no Mercado
+              Disponíveis
             </span>
           </div>
 
           <div className="space-y-3">
             {openLots.length === 0 ? (
               <p className="text-xs text-slate-400 py-6 text-center font-medium">
-                Nenhum lote em aberto cadastrado no momento.
+                Nenhum lote em aberto cadastrado para esta fazenda.
               </p>
             ) : (
-              openLots.map((lot) => (
-                <div key={lot.id} className="p-4 border border-slate-200/80 rounded-lg flex justify-between items-center bg-white hover:border-slate-300 transition-colors">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">{lot.title}</h3>
-                    <p className="text-xs text-slate-500 mt-1">Anunciado em: {lot.publishedAt}</p>
+              openLots.map((lot) => {
+                const valorNum = Number(lot.valorTotal || 0);
+
+                return (
+                  <div key={lot.id} className="p-4 border border-slate-200/80 rounded-xl flex justify-between items-center bg-white hover:border-slate-300 transition-colors">
+                    <div className="space-y-1">
+                      <h3 className="font-bold text-slate-900 text-sm">{lot.title}</h3>
+                      
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500">Anunciado em: {lot.publishedAt}</span>
+                        <span className="text-slate-300">•</span>
+                        {valorNum > 0 ? (
+                          <span className="font-extrabold text-emerald-700">
+                            {valorNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-slate-400 italic">Sob consulta</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="inline-block px-2.5 py-1 bg-slate-100 text-slate-800 font-bold text-xs rounded-md">
+                        {lot.quantity} gados
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="inline-block px-2.5 py-1 bg-slate-100 text-slate-800 font-bold text-xs rounded-md">
-                      {lot.quantity} gados
-                    </span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
 
-        {/* Lotes Fechados (Resumidos) */}
+        {/* Lotes Fechados (Resumo) */}
         <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-6 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -465,10 +443,10 @@ export const AnalyticsDashboard: React.FC = () => {
           <div className="space-y-3">
             {closedSales.length === 0 ? (
               <p className="text-xs text-slate-400 py-6 text-center font-medium">
-                Nenhuma venda concluída registrada no momento.
+                Nenhuma venda de lote concluída até o momento.
               </p>
             ) : (
-              closedSales.slice(0, 3).map((closed) => (
+              closedSales.slice(0, 5).map((closed) => (
                 <div key={closed.id} className="p-3.5 border border-slate-200/80 rounded-lg bg-slate-50/50 flex justify-between items-center">
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -493,7 +471,7 @@ export const AnalyticsDashboard: React.FC = () => {
 
       </div>
 
-      {/* POP-UP MODAL DE VENDAS DO MÊS */}
+      {/* Pop-up Modal de Vendas Detalhadas do Mês */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[88vh] shadow-2xl border border-slate-200/80 flex flex-col overflow-hidden">
@@ -556,7 +534,7 @@ export const AnalyticsDashboard: React.FC = () => {
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="Filtrar por Comprador (ex: Restaurante Domingos)..."
+                    placeholder="Filtrar por Comprador..."
                     value={filterComprador}
                     onChange={(e) => {
                       setFilterComprador(e.target.value);
@@ -566,13 +544,16 @@ export const AnalyticsDashboard: React.FC = () => {
                   />
                 </div>
 
+                {/* Filtro de Data com Máscara Automática (DD/MM/AAAA) */}
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Filtrar por Data (ex: 07/10/2026)..."
+                    maxLength={10}
+                    placeholder="DD/MM/AAAA"
                     value={filterData}
                     onChange={(e) => {
-                      setFilterData(e.target.value);
+                      const valorFormatado = aplicarMascaraData(e.target.value);
+                      setFilterData(valorFormatado);
                       setCurrentPage(1);
                     }}
                     className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -585,7 +566,7 @@ export const AnalyticsDashboard: React.FC = () => {
               {paginatedVendas.length === 0 ? (
                 <div className="p-12 text-center text-slate-400 space-y-2">
                   <UserCheck className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-xs font-bold">Nenhuma venda encontrada para o mês selecionado.</p>
+                  <p className="text-xs font-bold">Nenhuma venda realizada registrada para este mês.</p>
                 </div>
               ) : (
                 <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs bg-white">
@@ -667,3 +648,5 @@ export const AnalyticsDashboard: React.FC = () => {
     </div>
   );
 };
+
+export default AnalyticsDashboard;
