@@ -1,10 +1,15 @@
 import sys
 import json
 import os
+import warnings
+
+# Silencia logs e avisos internos do PyTorch/Ultralytics
+os.environ["YOLO_VERBOSE"] = "False"
+warnings.filterwarnings("ignore")
+
 import cv2
 import urllib.request
 import bz2
-from collections import Counter
 from ultralytics import YOLO
 
 
@@ -26,11 +31,14 @@ def garantir_openh264():
     except Exception:
         pass
 
+
 def processar_video(video_path):
     annotated_frame = None
     writer = None
     
     try:
+        garantir_openh264()
+
         diretorio_motor_ia = os.path.dirname(os.path.abspath(__file__))
         model_path = os.path.join(diretorio_motor_ia, "model", "best.pt")
 
@@ -47,25 +55,27 @@ def processar_video(video_path):
         video_processado_nome = f"{nome_base}_processado.mp4"
         video_processado_path = os.path.join(pasta_uploads, video_processado_nome)
 
-        # Executa inferência com NMS e ByteTrack
+        # CONFIGURAÇÃO DE ALTA PERFORMANCE PARA CPU:
+        # - vid_stride=3 (Processa 1 a cada 3 frames -> Ganho de 3x em velocidade)
+        # - device="cpu" (Força execução otimizada em processador)
         resultados = model.track(
             source=video_path,
-            conf=0.45,
-            iou=0.40,
-            imgsz=640,           
-            vid_stride=2,
+            conf=0.25,
+            iou=0.45,
+            imgsz=1024,
+            vid_stride=4, 
+            device="cpu", 
             persist=True,
             tracker="bytetrack.yaml",
             stream=True,
             verbose=False
         )
 
-        historico_ids = Counter()
+        contagem_por_frame = []
 
         for r in resultados:
             annotated_frame = r.plot()
 
-            # Inicialização segura do VideoWriter testando codecs compatíveis
             if writer is None or not writer.isOpened():
                 h, w, _ = annotated_frame.shape
                 for codec in ['avc1', 'H264', 'mp4v']:
@@ -77,34 +87,30 @@ def processar_video(video_path):
             if writer and writer.isOpened() and annotated_frame is not None:
                 writer.write(annotated_frame)
 
-            if r.boxes.id is not None:
-                ids = r.boxes.id.int().tolist()
+            if r.boxes is not None:
                 boxes = r.boxes.xywh.tolist()
-
-                ids_frame_validos = []
-                for obj_id, box in zip(ids, boxes):
-                    largura, altura = box[2], box[3]
-                    if (largura * altura) > 1000:
-                        ids_frame_validos.append(obj_id)
-
-                historico_ids.update(ids_frame_validos)
+                valid_boxes = [b for b in boxes if (b[2] * b[3]) > 200]
+                contagem_por_frame.append(len(valid_boxes))
 
         if writer and writer.isOpened():
             writer.release()
 
-        # Filtro de persistência temporal
-        MIN_FRAMES = 15
-        ids_confirmados = [obj_id for obj_id, count in historico_ids.items() if count >= MIN_FRAMES]
-        total_gado = len(ids_confirmados)
+        if contagem_por_frame:
+            contagem_por_frame.sort()
+            idx_pico = int(len(contagem_por_frame) * 0.90)
+            total_gado = contagem_por_frame[idx_pico]
+        else:
+            total_gado = 0
 
-        # Retorna o caminho absoluto do arquivo para o Node.js localizar sem falhar
         resposta = {
             "sucesso": True,
             "total_gado": total_gado,
             "video_processado": os.path.abspath(video_processado_path),
             "mensagem": "Processamento concluído com sucesso."
         }
-        print(json.dumps(resposta))
+        
+        sys.stdout.write(json.dumps(resposta) + "\n")
+        sys.stdout.flush()
 
     except Exception as e:
         if writer and writer.isOpened():
@@ -113,11 +119,15 @@ def processar_video(video_path):
             "sucesso": False,
             "erro": str(e)
         }
-        print(json.dumps(resposta))
+        sys.stdout.write(json.dumps(resposta) + "\n")
+        sys.stdout.flush()
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         caminho_video = sys.argv[1]
         processar_video(caminho_video)
     else:
-        print(json.dumps({"sucesso": False, "erro": "Caminho do vídeo não fornecido."}))
+        err = {"sucesso": False, "erro": "Caminho do vídeo não fornecido."}
+        sys.stdout.write(json.dumps(err) + "\n")
+        sys.stdout.flush()

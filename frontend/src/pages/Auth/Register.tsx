@@ -159,7 +159,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            <ShoppingBag className="w-4 h-4 text-blue-400" />
+            <ShoppingBag className="w-4 h-4 text-emerald-400" />
             <span>Comprador / Frigorífico</span>
           </button>
         </div>
@@ -343,7 +343,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           ) : (
             /* CAMPOS DE COMPRADOR */
             <div className="space-y-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-800 bg-blue-50 px-2.5 py-1 rounded-md inline-block">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md inline-block">
                 Informações da Empresa / Frigorífico
               </span>
 

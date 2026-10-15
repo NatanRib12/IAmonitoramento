@@ -12,7 +12,6 @@ export async function processarVideoIA(input: Buffer | string): Promise<any> {
     if (typeof input === 'string') {
       caminhoVideoAbsoluto = path.resolve(input);
     } else {
-      // Cria um arquivo temporário apenas para leitura do script Python
       tempFilePath = path.join(os.tmpdir(), `temp-video-${Date.now()}.mp4`);
       fs.writeFileSync(tempFilePath, input);
       caminhoVideoAbsoluto = tempFilePath;
@@ -36,9 +35,11 @@ export async function processarVideoIA(input: Buffer | string): Promise<any> {
           }
 
           try {
-            // Isola e extrai apenas a linha que contém a estrutura do JSON
+            // Isola estritamente a linha do JSON completo que inicia com { e termina com }
             const linhas = stdout.split(/\r?\n/);
-            const linhaJson = linhas.reverse().find(linha => linha.trim().startsWith('{'));
+            const linhaJson = linhas
+              .reverse()
+              .find(linha => linha.trim().startsWith('{') && linha.trim().endsWith('}'));
 
             if (!linhaJson) {
               throw new Error('Nenhum JSON válido foi encontrado na saída do Python.');
@@ -57,7 +58,6 @@ export async function processarVideoIA(input: Buffer | string): Promise<any> {
     return resultado;
 
   } finally {
-    // Apaga o arquivo temporário do sistema imediatamente após o processamento
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);
