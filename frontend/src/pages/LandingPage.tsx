@@ -18,9 +18,13 @@ import {
   ArrowRight
 } from 'lucide-react';
 
-const HERO_IMAGE_PATH = '/src/assets/gados.jpeg';
-const SOLUCOES_IMAGE_PATH = '/src/assets/gadoaereo.webp';  
-const CONSUMIDORES_IMAGE_PATH = '/src/assets/gadoboxes.png';
+import heroImg from '../assets/gados.jpeg';
+import solucoesImg from '../assets/gadoaereo.webp';
+import consumidoresImg from '../assets/gadoboxes.png';
+
+const HERO_IMAGE_PATH = heroImg;
+const SOLUCOES_IMAGE_PATH = solucoesImg;  
+const CONSUMIDORES_IMAGE_PATH = consumidoresImg;
 
 interface LandingPageProps {
   onNavigateLogin?: () => void;
