@@ -336,12 +336,6 @@ export function ConsumidorDashboard() {
                       </div>
                     </div>
                   </div>
-
-                  <div className="pt-3 border-t border-slate-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md">
-                      Auditado por Visão Computacional
-                    </span>
-                  </div>
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-6 min-h-[260px]">

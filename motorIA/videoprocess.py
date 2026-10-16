@@ -2,14 +2,16 @@ import sys
 import json
 import os
 import warnings
+from collections import Counter
 
-# Silencia logs e avisos internos do PyTorch/Ultralytics
+# Silencia logs e avisos internos do PyTorch/Ultralytics no stdout
 os.environ["YOLO_VERBOSE"] = "False"
 warnings.filterwarnings("ignore")
 
 import cv2
 import urllib.request
 import bz2
+import torch
 from ultralytics import YOLO
 
 
@@ -35,43 +37,57 @@ def garantir_openh264():
 def processar_video(video_path):
     annotated_frame = None
     writer = None
-    
+
     try:
         garantir_openh264()
 
         diretorio_motor_ia = os.path.dirname(os.path.abspath(__file__))
-        model_path = os.path.join(diretorio_motor_ia, "model", "best.pt")
+        
+        # 1. Detecção automática de Modelo OpenVINO (Intel Iris Xe) ou PyTorch (.pt)
+        openvino_model_path = os.path.join(diretorio_motor_ia, "model", "best_openvino_model")
+        pt_model_path = os.path.join(diretorio_motor_ia, "model", "best.pt")
 
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Arquivo de modelo não encontrado em: {model_path}")
+        if os.path.exists(openvino_model_path):
+            # Carrega versão acelerada OpenVINO
+            model_path = openvino_model_path
+            device = "GPU"  # GPU integrada Intel Iris Xe
+            use_half = False
+        elif os.path.exists(pt_model_path):
+            # Carrega versão .pt via PyTorch
+            model_path = pt_model_path
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            use_half = True if device == "cuda" else False
+        else:
+            raise FileNotFoundError(f"Nenhum arquivo de modelo encontrado na pasta: {os.path.join(diretorio_motor_ia, 'model')}")
 
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Arquivo de vídeo não encontrado em: {video_path}")
 
-        model = YOLO(model_path)
+        model = YOLO(model_path, task="detect")
 
         pasta_uploads = os.path.dirname(video_path)
         nome_base = os.path.splitext(os.path.basename(video_path))[0]
         video_processado_nome = f"{nome_base}_processado.mp4"
         video_processado_path = os.path.join(pasta_uploads, video_processado_nome)
 
-        # CONFIGURAÇÃO DE ALTA PERFORMANCE PARA CPU:
-        # - vid_stride=3 (Processa 1 a cada 3 frames -> Ganho de 3x em velocidade)
-        # - device="cpu" (Força execução otimizada em processador)
+        VID_STRIDE = 3
+
+        # Inferência com tratamento de dispositivo
         resultados = model.track(
             source=video_path,
-            conf=0.25,
-            iou=0.45,
-            imgsz=1024,
-            vid_stride=4, 
-            device="cpu", 
+            conf=0.65,
+            iou=0.40,
+            imgsz=800,           
+            vid_stride=VID_STRIDE,
+            device=device,
+            half=use_half,
             persist=True,
             tracker="bytetrack.yaml",
             stream=True,
             verbose=False
         )
 
-        contagem_por_frame = []
+        historico_ids = Counter()
 
         for r in resultados:
             annotated_frame = r.plot()
@@ -87,20 +103,25 @@ def processar_video(video_path):
             if writer and writer.isOpened() and annotated_frame is not None:
                 writer.write(annotated_frame)
 
-            if r.boxes is not None:
+            if r.boxes is not None and r.boxes.id is not None:
+                ids = r.boxes.id.int().tolist()
                 boxes = r.boxes.xywh.tolist()
-                valid_boxes = [b for b in boxes if (b[2] * b[3]) > 200]
-                contagem_por_frame.append(len(valid_boxes))
+
+                ids_frame_validos = []
+                for obj_id, box in zip(ids, boxes):
+                    largura, altura = box[2], box[3]
+                    if (largura * altura) > 500:
+                        ids_frame_validos.append(obj_id)
+
+                historico_ids.update(ids_frame_validos)
 
         if writer and writer.isOpened():
             writer.release()
 
-        if contagem_por_frame:
-            contagem_por_frame.sort()
-            idx_pico = int(len(contagem_por_frame) * 0.90)
-            total_gado = contagem_por_frame[idx_pico]
-        else:
-            total_gado = 0
+        # Ajuste dinâmico de persistência temporal proporcional ao vid_stride
+        min_frames_necessarios = max(3, int(15 / VID_STRIDE))
+        ids_confirmados = [obj_id for obj_id, count in historico_ids.items() if count >= min_frames_necessarios]
+        total_gado = len(ids_confirmados)
 
         resposta = {
             "sucesso": True,
@@ -108,7 +129,7 @@ def processar_video(video_path):
             "video_processado": os.path.abspath(video_processado_path),
             "mensagem": "Processamento concluído com sucesso."
         }
-        
+
         sys.stdout.write(json.dumps(resposta) + "\n")
         sys.stdout.flush()
 
