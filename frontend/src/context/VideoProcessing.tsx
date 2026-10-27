@@ -32,7 +32,8 @@ interface VideoProcessingContextType {
   status: ProcessingStatus;
   totalCabecasIa: number | null;
   totalCabecasAnuncio: number | string;
-  valorLoteAnuncio: number | string; // <-- ADICIONADO
+  valorLoteAnuncio: number | string;
+  pastoSelecionadoId: string; // <-- ADICIONADO
   videoTitle: string;
   isDragging: boolean;
   notificado: boolean;
@@ -46,7 +47,8 @@ interface VideoProcessingContextType {
 
   setIsDragging: (value: boolean) => void;
   setTotalCabecasAnuncio: (value: number | string) => void;
-  setValorLoteAnuncio: (value: number | string) => void; // <-- ADICIONADO
+  setValorLoteAnuncio: (value: number | string) => void;
+  setPastoSelecionadoId: (value: string) => void; // <-- ADICIONADO
   setVideoTitle: (value: string) => void;
   setStatus: (status: ProcessingStatus) => void;
   
@@ -87,7 +89,8 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [totalCabecasIa, setTotalCabecasIa] = useState<number | null>(null);
   const [totalCabecasAnuncio, setTotalCabecasAnuncio] = useState<number | string>('');
-  const [valorLoteAnuncio, setValorLoteAnuncio] = useState<number | string>(''); // <-- ADICIONADO ESTADO LOCAL
+  const [valorLoteAnuncio, setValorLoteAnuncio] = useState<number | string>('');
+  const [pastoSelecionadoId, setPastoSelecionadoId] = useState<string>(''); // <-- NOVO ESTADO
   
   const [videoTitle, setVideoTitle] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -189,8 +192,7 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
     executingRef.current = false;
   };
 
-
- const executarNotificacao = async (valorGaleriaInformado?: number) => {
+  const executarNotificacao = async (valorGaleriaInformado?: number) => {
     if (executingRef.current) return;
     executingRef.current = true;
 
@@ -208,16 +210,11 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
       if (itemGaleriaParaNotificar) {
         const item = savedAnalyzedVideos.find((v) => v.id === itemGaleriaParaNotificar);
         if (item) {
-          // Captura o valor na seguinte ordem:
-          // 1. valorGaleriaInformado (se passado por argumento)
-          // 2. valorLoteAnuncio (preenchido no input do pop-up da galeria)
-          // 3. item.valorTotal (valor salvo anteriormente)
           const valorContextoNum = valorLoteAnuncio !== '' ? Number(valorLoteAnuncio) : undefined;
           const valorFinal = valorGaleriaInformado !== undefined 
             ? Number(valorGaleriaInformado) 
             : (valorContextoNum !== undefined ? valorContextoNum : (item.valorTotal || 0));
 
-          // Envia o valor correto para a API de publicação
           await api.post('/api/lotes/publicar', {
             loteId: item.dbLoteId,
             quantidadeCabecas: item.cattleCount,
@@ -226,7 +223,6 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
             fazendaId: activeFarm.id
           });
 
-          // Atualiza a galeria local mantendo o valor monetário correto
           setSavedAnalyzedVideos((prev) =>
             prev.map((v) => 
               v.id === itemGaleriaParaNotificar 
@@ -245,7 +241,7 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
     } finally {
       setEnviandoNotificacao(false);
       setItemGaleriaParaNotificar(null);
-      setValorLoteAnuncio(''); // Limpa o estado após publicar
+      setValorLoteAnuncio('');
       executingRef.current = false;
     }
   };
@@ -265,7 +261,8 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
     setPendingCount(null);
     setTotalCabecasIa(null);
     setTotalCabecasAnuncio('');
-    setValorLoteAnuncio(''); // <-- LIMPA O CAMPO DE VALOR
+    setValorLoteAnuncio('');
+    setPastoSelecionadoId(''); // <-- RESETA O PASTO SELECIONADO
     setVideoTitle('');
     setNotificado(false);
     setEnviandoNotificacao(false);
@@ -295,8 +292,9 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.post('/api/videos/salvar-galeria', {
         fazendaId: activeFarm.id,
+        pastoId: pastoSelecionadoId || undefined, // <-- ENVIA O PASTO ONDE FOI FEITA A LEITURA
         quantidadeCabecas: Number(totalCabecasAnuncio) || totalCabecasIa || 0,
-        valorTotal: Number(valorLoteAnuncio) || 0, // <-- ENVIA O VALOR PARA O BANCO
+        valorTotal: Number(valorLoteAnuncio) || 0,
         videoOriginalUrl: rawVideoUrl,
         videoProcessadoUrl: videoUrl,
         status: isActuallyNotified ? 'DISPONIVEL' : 'RASCUNHO'
@@ -350,6 +348,7 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
       setPendingCount(null);
       setTotalCabecasIa(null);
       setValorLoteAnuncio('');
+      setPastoSelecionadoId('');
       setNotificado(false);
 
       const nomeLimpo = file.name.replace(/\.[^/.]+$/, "");
@@ -455,7 +454,8 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
         status,
         totalCabecasIa,
         totalCabecasAnuncio,
-        valorLoteAnuncio, // <-- EXPORTADO NO CONTEXTO
+        valorLoteAnuncio,
+        pastoSelecionadoId, // <-- EXPORTADO
         videoTitle,
         isDragging,
         notificado,
@@ -469,7 +469,8 @@ export function VideoProcessingProvider({ children }: { children: ReactNode }) {
 
         setIsDragging,
         setTotalCabecasAnuncio,
-        setValorLoteAnuncio, // <-- EXPORTADO NO CONTEXTO
+        setValorLoteAnuncio,
+        setPastoSelecionadoId, // <-- EXPORTADO
         setVideoTitle,
         setStatus,
         processFile,

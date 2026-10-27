@@ -65,17 +65,35 @@ export const ReservedLots: React.FC = () => {
       const lotesRecebidos = res.data?.lotes || (Array.isArray(res.data) ? res.data : []);
 
       if (Array.isArray(lotesRecebidos)) {
-        const mapeados: LoteReservado[] = lotesRecebidos.map((lote: any) => ({
-          id: lote.id || Math.random().toString(),
-          quantidadeCabecas: Number(lote.quantidadeCabecas) || 0,
-          valorTotal: Number(lote.valorTotal || lote.valor || lote.valor_total) || 0,
-          status: lote.status || 'RESERVADO',
-          dataReserva: lote.createdAt ? new Date(lote.createdAt).toLocaleDateString('pt-BR') : 'Data n/d',
-          fazendaNome: lote.fazenda?.nome || 'Fazenda',
-          localizacao: lote.fazenda?.localizacao || 'Não informada',
-          produtorNome: lote.fazenda?.usuario?.nome || 'Produtor',
-          produtorTelefone: lote.fazenda?.usuario?.telefone || ''
-        }));
+        const mapeados: LoteReservado[] = lotesRecebidos.map((lote: any) => {
+          let propQtd = Number(lote.quantidadeCabecas) || 0;
+          let propVal = Number(lote.valorTotal || lote.valor || lote.valor_total) || 0;
+
+          // Extrai os valores atualizados da proposta se gravados nos metadados
+          if (lote.consumerPhone && typeof lote.consumerPhone === 'string' && lote.consumerPhone.startsWith('{')) {
+            try {
+              const parsed = JSON.parse(lote.consumerPhone);
+              if (parsed.propostaQtd) propQtd = Number(parsed.propostaQtd);
+              if (parsed.propostaValor !== undefined && parsed.propostaValor !== null) {
+                propVal = Number(parsed.propostaValor);
+              }
+            } catch (e) {
+              console.error('Erro ao ler metadados da proposta:', e);
+            }
+          }
+
+          return {
+            id: lote.id || Math.random().toString(),
+            quantidadeCabecas: propQtd,
+            valorTotal: propVal,
+            status: lote.status || 'RESERVADO',
+            dataReserva: lote.createdAt ? new Date(lote.createdAt).toLocaleDateString('pt-BR') : 'Data n/d',
+            fazendaNome: lote.fazenda?.nome || 'Fazenda',
+            localizacao: lote.fazenda?.localizacao || 'Não informada',
+            produtorNome: lote.fazenda?.usuario?.nome || 'Produtor',
+            produtorTelefone: lote.fazenda?.usuario?.telefone || ''
+          };
+        });
 
         setReservados(mapeados);
       }
@@ -90,26 +108,26 @@ export const ReservedLots: React.FC = () => {
     carregarReservas();
   }, [consumidorId]);
 
-    const handleAceitarProposta = async (id: string) => {
-        setProcessandoId(id);
-        try {
-        await api.put(`/api/lotes/${id}/aceitar-proposta`);
-        
-        // REMOVE O LOTE DA LISTA DE RESERVAS ATIVAS
-        setReservados((prev) => prev.filter((lote) => lote.id !== id));
+  const handleAceitarProposta = async (id: string) => {
+    setProcessandoId(id);
+    try {
+      await api.put(`/api/lotes/${id}/aceitar-proposta`);
+      
+      // REMOVE O LOTE DA LISTA DE RESERVAS ATIVAS
+      setReservados((prev) => prev.filter((lote) => lote.id !== id));
 
-        setModalFeedback({
-            aberto: true,
-            titulo: 'Proposta Aceita!',
-            mensagem: 'A compra do lote foi confirmada com sucesso! O registro foi transferido para a sua tela de "Compras Anteriores".',
-            tipo: 'sucesso'
-        });
-        } catch (err) {
-        console.error('Erro ao aceitar proposta:', err);
-        } finally {
-        setProcessandoId(null);
-        }
-    };
+      setModalFeedback({
+        aberto: true,
+        titulo: 'Proposta Aceita!',
+        mensagem: 'A compra do lote foi confirmada com sucesso! O registro foi transferido para a sua tela de "Compras Anteriores".',
+        tipo: 'sucesso'
+      });
+    } catch (err) {
+      console.error('Erro ao aceitar proposta:', err);
+    } finally {
+      setProcessandoId(null);
+    }
+  };
     
   const handleRecusarProposta = async (id: string) => {
     setProcessandoId(id);

@@ -1,123 +1,162 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  TrendingUp, 
-  CheckCircle2, 
-  Clock, 
+  Building2, 
   Calendar, 
-  Building2,
-  Info,
-  X,
-  ChevronLeft,
-  ChevronRight,
+  PlusCircle, 
+  MinusCircle, 
+  Box, 
+  DollarSign, 
+  Loader2,
   Filter,
-  Search,
-  UserCheck,
-  Loader2
+  BarChart2,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ClipboardList,
+  PieChart as PieIcon,
+  BarChart3,
+  MapPin,
+  Users,
+  Info
 } from 'lucide-react';
+import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useFarm } from '../../context/FarmContext';
 import { api } from '../../services/api';
 
-export interface OpenLot {
+declare const echarts: any;
+
+export interface LotItem {
   id: string;
-  title: string;
-  quantity: number;
-  publishedAt: string;
-  valorTotal?: number;
+  pastoId?: string;
+  pastoSelecionadoId?: string;
+  quantidadeOriginal: number;
+  quantidadeCabecas: number;
+  quantidadeVendida: number;
+  valorTotal: number;
+  valorVendido: number;
+  status: 'DISPONIVEL' | 'VENDIDO' | 'PARCIAL' | 'RESERVADO' | 'ANALISE_CLIENTE' | 'RESERVA';
+  createdAt: string;
+  updatedAt?: string;
 }
 
-export interface ClosedSaleDetail {
+export interface Pasto {
   id: string;
+  nome: string;
+  geojson?: any;
+}
+
+export interface ProcessEvent {
+  id: string;
+  tipo: 'ENTRADA' | 'SAIDA';
+  nomeProcesso: string;
+  detalhe: string;
   data: string;
-  comprador: string;
-  valorNegociado: number;
-  quantidadeGado: number;
-  monthIndex: number;
-  year: number;
+  hora: string;
+  timestamp: number;
+  quantidade: number;
+  valor: number;
+  statusLabel: string;
 }
 
-export interface MonthlySalesSummary {
-  month: string;
-  monthIndex: number;
-  totalGados: number;
-  totalRevenue: number;
-  lotsSold: number;
-}
-
-const TODOS_OS_MESES = [
+const MESES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-// Função utilitária para aplicar a máscara de data DD/MM/AAAA automaticamente
-const aplicarMascaraData = (valor: string): string => {
-  const apenasNumeros = valor.replace(/\D/g, '').slice(0, 8);
+const customDensityLabelStyle = `
+  .pasto-density-tooltip {
+    background-color: rgba(15, 23, 42, 0.95) !important;
+    border: 1px solid #10b981 !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 11px !important;
+    border-radius: 10px !important;
+    padding: 6px 12px !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4) !important;
+  }
+`;
 
-  if (apenasNumeros.length <= 2) {
-    return apenasNumeros;
-  }
-  if (apenasNumeros.length <= 4) {
-    return `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2)}`;
-  }
-  return `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2, 4)}/${apenasNumeros.slice(4)}`;
+function MapController({ geojson }: { geojson: any }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (geojson) {
+      try {
+        const layer = L.geoJSON(geojson);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [30, 30] });
+        }
+      } catch (e) {
+        console.error('Erro ao ajustar mapa:', e);
+      }
+    }
+  }, [geojson, map]);
+
+  return null;
+}
+
+const getCorDensidade = (quantidade: number) => {
+  if (quantidade === 0) return { fill: '#cbd5e1', stroke: '#94a3b8' };
+  if (quantidade <= 20) return { fill: '#86efac', stroke: '#16a34a' };
+  if (quantidade <= 50) return { fill: '#fde047', stroke: '#ca8a04' };
+  if (quantidade <= 100) return { fill: '#fb923c', stroke: '#ea580c' };
+  return { fill: '#f87171', stroke: '#dc2626' };
 };
 
-let cacheLotesSession: { farmId: string; lotes: any[] } | null = null;
+let cacheLotesSession: { farmId: string; lotes: LotItem[] } | null = null;
 
 export const AnalyticsDashboard: React.FC = () => {
   const { activeFarm } = useFarm();
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-
-  const hasCache = cacheLotesSession && cacheLotesSession.farmId === activeFarm?.id;
-
-  // Estado dos Lotes em Aberto (Disponíveis) - APENAS DADOS REAIS
-  const [openLots, setOpenLots] = useState<OpenLot[]>(() => {
-    if (!hasCache) return [];
-    return cacheLotesSession!.lotes
-      .filter((l: any) => l.status === 'DISPONIVEL')
-      .map((l: any) => ({
-        id: l.id,
-        title: `Lote ${l.quantidadeCabecas} Gados`,
-        quantity: l.quantidadeCabecas || 0,
-        publishedAt: new Date(l.createdAt).toLocaleDateString('pt-BR'),
-        valorTotal: Number(l.valorTotal || l.valor || l.valor_total || l.valorLote) || 0
-      }));
-  });
-
-  // Estado das Vendas Fechadas (VENDIDO) - 100% REAIS (SEM MOCKS)
-  const [closedSales, setClosedSales] = useState<ClosedSaleDetail[]>(() => {
-    if (!hasCache) return [];
-    return cacheLotesSession!.lotes
-      .filter((l: any) => l.status === 'VENDIDO')
-      .map((l: any) => {
-        const dataObj = new Date(l.updatedAt || l.createdAt);
-        return {
-          id: l.id,
-          data: dataObj.toLocaleDateString('pt-BR'),
-          comprador: l.consumerName || 'Comprador Parceiro',
-          valorNegociado: Number(l.closedValue || l.valorTotal || l.valor || l.valor_total) || 0,
-          quantidadeGado: Number(l.quantidadeCabecas) || 0,
-          monthIndex: dataObj.getMonth(),
-          year: dataObj.getFullYear()
-        };
-      });
-  });
-
-  const [monthlyProgression, setMonthlyProgression] = useState<MonthlySalesSummary[]>([]);
-  const [loading, setLoading] = useState<boolean>(!hasCache);
-
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [activeMonthIndexModal, setActiveMonthIndexModal] = useState<number>(new Date().getMonth());
   
-  const [showFilterBar, setShowFilterBar] = useState<boolean>(false);
-  const [filterComprador, setFilterComprador] = useState<string>('');
-  const [filterData, setFilterData] = useState<string>('');
+  const selectedYear = 2026;
+  const [selectedMonth, setSelectedMonth] = useState<number | 'TODOS'>('TODOS');
+  const [filterProcessType, setFilterProcessType] = useState<'TODOS' | 'ENTRADA' | 'SAIDA'>('TODOS');
 
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const ITEMS_PER_PAGE = 10;
+  const [lotes, setLotes] = useState<LotItem[]>(() => {
+    if (cacheLotesSession && cacheLotesSession.farmId === activeFarm?.id) {
+      return cacheLotesSession.lotes;
+    }
+    return [];
+  });
 
-  const mesAtualIndex = new Date().getMonth();
+  const [pastos, setPastos] = useState<Pasto[]>([]);
+  const [loading, setLoading] = useState<boolean>(
+    !cacheLotesSession || cacheLotesSession.farmId !== activeFarm?.id
+  );
+  
+  const [echartsLoaded, setEchartsLoaded] = useState<boolean>(false);
+  
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<any>(null);
 
-  // Busca dados atualizados da fazenda ativa diretamente na API
+  const pieChartRef = useRef<HTMLDivElement>(null);
+  const pieChartInstanceRef = useRef<any>(null);
+
+  const barChartRef = useRef<HTMLDivElement>(null);
+  const barChartInstanceRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof echarts !== 'undefined') {
+      setEchartsLoaded(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';
+    script.async = true;
+    script.onload = () => setEchartsLoaded(true);
+    document.body.appendChild(script);
+
+    return () => {
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    };
+  }, []);
+
+  // Carrega lotes e pastos da fazenda ativa
   useEffect(() => {
     if (!activeFarm?.id) return;
 
@@ -125,121 +164,415 @@ export const AnalyticsDashboard: React.FC = () => {
       setLoading(true);
     }
 
+    // 1. Carregar Pastos
+    api.get(`/api/fazendas/${activeFarm.id}/pastos`)
+      .then((res) => {
+        if (res.data?.sucesso && Array.isArray(res.data.pastos)) {
+          setPastos(res.data.pastos);
+        }
+      })
+      .catch((err) => console.error('Erro ao buscar pastos:', err));
+
+    // 2. Carregar Lotes do Mercado
     api.get(`/api/videos/minha-fazenda?fazendaId=${activeFarm.id}`)
       .then((res) => {
-        const lotesBD = res.data?.lotes || [];
+        const lotesBD: any[] = res.data?.lotes || [];
+        
+        const lotesFormatados: LotItem[] = lotesBD.map((l) => {
+          let propQtd = 0;
+          let propVal = 0;
+          let pastoIdMetadados = l.pastoId || l.pastoSelecionadoId || '';
 
-        cacheLotesSession = {
-          farmId: activeFarm.id,
-          lotes: lotesBD
-        };
+          if (l.consumerPhone && typeof l.consumerPhone === 'string' && l.consumerPhone.startsWith('{')) {
+            try {
+              const parsed = JSON.parse(l.consumerPhone);
+              propQtd = Number(parsed.propostaQtd || 0);
+              propVal = Number(parsed.propostaValor || 0);
+              if (parsed.pastoId) pastoIdMetadados = parsed.pastoId;
+            } catch (e) {
+              console.error('Erro ao ler metadados:', e);
+            }
+          }
 
-        const abertosReais: OpenLot[] = lotesBD
-          .filter((l: any) => l.status === 'DISPONIVEL')
-          .map((l: any) => ({
+          const quantOriginal = Number(l.quantidadeCabecas || 0);
+          const quantVendida = propQtd > 0 
+            ? propQtd 
+            : Number(l.quantidadeVendida || l.closedQuantity || (l.status === 'VENDIDO' ? quantOriginal : 0));
+
+          const valOriginal = Number(l.valorTotal || l.valor || l.valorLote || 0);
+          const valVendido = propVal > 0 
+            ? propVal 
+            : Number(l.closedValue || l.valorVendido || (l.status === 'VENDIDO' ? valOriginal : 0));
+
+          return {
             id: l.id,
-            title: `Lote ${l.quantidadeCabecas} Gados`,
-            quantity: l.quantidadeCabecas || 0,
-            publishedAt: new Date(l.createdAt).toLocaleDateString('pt-BR'),
-            valorTotal: Number(l.valorTotal || l.valor || l.valor_total || l.valorLote) || 0
-          }));
+            pastoId: pastoIdMetadados,
+            quantidadeOriginal: quantOriginal,
+            quantidadeCabecas: quantOriginal,
+            quantidadeVendida: quantVendida,
+            valorTotal: valOriginal,
+            valorVendido: valVendido,
+            status: l.status || 'DISPONIVEL',
+            createdAt: l.createdAt || new Date().toISOString(),
+            updatedAt: l.updatedAt || l.createdAt || new Date().toISOString()
+          };
+        });
 
-        const fechadosReais: ClosedSaleDetail[] = lotesBD
-          .filter((l: any) => l.status === 'VENDIDO')
-          .map((l: any) => {
-            const dataObj = new Date(l.updatedAt || l.createdAt);
-            return {
-              id: l.id,
-              data: dataObj.toLocaleDateString('pt-BR'),
-              comprador: l.consumerName || 'Comprador Parceiro',
-              valorNegociado: Number(l.closedValue || l.valorTotal || l.valor || l.valor_total) || 0,
-              quantidadeGado: Number(l.quantidadeCabecas) || 0,
-              monthIndex: dataObj.getMonth(),
-              year: dataObj.getFullYear()
-            };
-          });
-
-        setOpenLots(abertosReais);
-        setClosedSales(fechadosReais);
+        cacheLotesSession = { farmId: activeFarm.id, lotes: lotesFormatados };
+        setLotes(lotesFormatados);
       })
-      .catch((err) => console.error('Erro ao buscar dados reais do banco:', err))
+      .catch((err) => console.error('Erro ao carregar lotes do backend:', err))
       .finally(() => setLoading(false));
   }, [activeFarm?.id]);
 
-  // Recalcula o progresso dos 12 meses baseado apenas em vendas reais
-  useEffect(() => {
-    const dozeMeses: MonthlySalesSummary[] = TODOS_OS_MESES.map((nomeMes, index) => {
-      const vendasDoMes = closedSales.filter(
-        (v) => v.monthIndex === index && v.year === selectedYear
-      );
+  const terrenoGeoJson = useMemo(() => {
+    if (!activeFarm?.geojson) return null;
+    try {
+      return typeof activeFarm.geojson === 'string' ? JSON.parse(activeFarm.geojson) : activeFarm.geojson;
+    } catch (e) {
+      return null;
+    }
+  }, [activeFarm?.geojson]);
 
-      const totalGados = vendasDoMes.reduce((sum, item) => sum + item.quantidadeGado, 0);
-      const totalRevenue = vendasDoMes.reduce((sum, item) => sum + item.valorNegociado, 0);
+  const lotesFiltradosPeriodo = lotes.filter((l) => {
+    const dataCriacao = new Date(l.createdAt);
+    if (dataCriacao.getFullYear() !== selectedYear) return false;
 
-      return {
-        month: nomeMes,
-        monthIndex: index,
-        totalGados,
-        totalRevenue,
-        lotsSold: vendasDoMes.length
-      };
-    });
-
-    setMonthlyProgression(dozeMeses);
-  }, [closedSales, selectedYear]);
-
-  const handleOpenModal = (monthIndex: number) => {
-    setActiveMonthIndexModal(monthIndex);
-    setCurrentPage(1);
-    setFilterComprador('');
-    setFilterData('');
-    setIsModalOpen(true);
-  };
-
-  const handlePrevMonth = () => {
-    setActiveMonthIndexModal((prev) => (prev > 0 ? prev - 1 : 11));
-    setCurrentPage(1);
-  };
-
-  const handleNextMonth = () => {
-    setActiveMonthIndexModal((prev) => (prev < 11 ? prev + 1 : 0));
-    setCurrentPage(1);
-  };
-
-  const vendasDoMesAtivo = closedSales.filter((v) => {
-    if (v.monthIndex !== activeMonthIndexModal || v.year !== selectedYear) return false;
-    if (filterComprador && !v.comprador.toLowerCase().includes(filterComprador.toLowerCase())) return false;
-    if (filterData && !v.data.includes(filterData)) return false;
+    if (selectedMonth !== 'TODOS') {
+      return dataCriacao.getMonth() === selectedMonth;
+    }
     return true;
   });
 
-  const totalPages = Math.max(1, Math.ceil(vendasDoMesAtivo.length / ITEMS_PER_PAGE));
-  const paginatedVendas = vendasDoMesAtivo.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  // 1. Entrada de Gados
+  const entradaGadosCard = lotesFiltradosPeriodo.reduce((sum, l) => sum + (l.quantidadeOriginal || l.quantidadeCabecas), 0);
 
-  const saidaMesAtual = monthlyProgression[mesAtualIndex]?.totalGados || 0;
-  const maxGados = Math.max(...monthlyProgression.map((m) => m.totalGados), 1);
+  // 2. Saída de Gados
+  const saidaGadosCard = lotesFiltradosPeriodo.reduce((sum, l) => sum + l.quantidadeVendida, 0);
 
-  if (loading && !openLots.length) {
+  // 3. Gados Restantes
+  const gadosRestantesCard = Math.max(0, entradaGadosCard - saidaGadosCard);
+
+  // 4. Entrada Financeira
+  const entradaFinanceiraCard = lotesFiltradosPeriodo.reduce((sum, l) => sum + (l.valorVendido > 0 ? l.valorVendido : 0), 0);
+
+  // Porcentagem de saída de gados
+  const porcentagemSaida = useMemo(() => {
+    if (!entradaGadosCard) return 0;
+    return Math.round((saidaGadosCard / entradaGadosCard) * 100);
+  }, [entradaGadosCard, saidaGadosCard]);
+
+  // CÁLCULO DENSIDADE DOS PASTOS (Entrada - Saída = Sobra no Pasto)
+  const pastosComDensidade = useMemo(() => {
+    return pastos.map((pasto) => {
+      const lotesDoPasto = lotesFiltradosPeriodo.filter((l) => l.pastoId === pasto.id || l.pastoSelecionadoId === pasto.id);
+      const entradaPasto = lotesDoPasto.reduce((sum, l) => sum + (l.quantidadeOriginal || l.quantidadeCabecas), 0);
+      const saidaPasto = lotesDoPasto.reduce((sum, l) => sum + l.quantidadeVendida, 0);
+      const quantidadeGadoAtual = Math.max(0, entradaPasto - saidaPasto);
+
+      return {
+        ...pasto,
+        quantidadeGadoAtual
+      };
+    });
+  }, [pastos, lotesFiltradosPeriodo]);
+
+  const totalGadoNoMapa = useMemo(() => {
+    return pastosComDensidade.reduce((sum, p) => sum + p.quantidadeGadoAtual, 0);
+  }, [pastosComDensidade]);
+
+  // HISTÓRICO DE PROCESSOS
+  const historicoProcessos: ProcessEvent[] = [];
+
+  lotesFiltradosPeriodo.forEach((l) => {
+    const dtCriacao = new Date(l.createdAt);
+    const qtdEntrada = l.quantidadeOriginal || l.quantidadeCabecas;
+
+    historicoProcessos.push({
+      id: `ent-${l.id}`,
+      tipo: 'ENTRADA',
+      nomeProcesso: 'Entrada de gado',
+      detalhe: `Lote de ${qtdEntrada} cabeças anunciado`,
+      data: dtCriacao.toLocaleDateString('pt-BR'),
+      hora: dtCriacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: dtCriacao.getTime(),
+      quantidade: qtdEntrada,
+      valor: l.valorTotal,
+      statusLabel: 'No Mercado'
+    });
+
+    if (l.quantidadeVendida > 0 || l.status === 'VENDIDO' || l.status === 'ANALISE_CLIENTE') {
+      const dtVenda = new Date(l.updatedAt || l.createdAt);
+      historicoProcessos.push({
+        id: `sai-${l.id}`,
+        tipo: 'SAIDA',
+        nomeProcesso: 'Saída de gado',
+        detalhe: `Proposta aceita e lote transferido`,
+        data: dtVenda.toLocaleDateString('pt-BR'),
+        hora: dtVenda.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: dtVenda.getTime() + 1,
+        quantidade: l.quantidadeVendida,
+        valor: l.valorVendido > 0 ? l.valorVendido : l.valorTotal,
+        statusLabel: 'Concluído'
+      });
+    }
+  });
+
+  historicoProcessos.sort((a, b) => b.timestamp - a.timestamp);
+
+  const historicoFiltrado = historicoProcessos.filter((proc) => {
+    if (filterProcessType === 'ENTRADA') return proc.tipo === 'ENTRADA';
+    if (filterProcessType === 'SAIDA') return proc.tipo === 'SAIDA';
+    return true;
+  });
+
+  // Top 5 Meses com Maior Saída de Gado
+  const top5MesesSaida = useMemo(() => {
+    const totaisPorMes = MESES.map((nomeMes, index) => {
+      const totalSaidaMes = lotes.filter((l) => {
+        const d = new Date(l.createdAt);
+        return d.getFullYear() === selectedYear && d.getMonth() === index;
+      }).reduce((sum, l) => sum + l.quantidadeVendida, 0);
+
+      return {
+        nome: nomeMes.substring(0, 3),
+        nomeCompleto: nomeMes,
+        valor: totalSaidaMes
+      };
+    });
+
+    return totaisPorMes
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 5);
+  }, [lotes, selectedYear]);
+
+  // 1. ECHARTS: LINHA DE PROGRESSÃO
+  useEffect(() => {
+    if (!echartsLoaded || !chartRef.current) return;
+
+    if (!chartInstanceRef.current) {
+      chartInstanceRef.current = echarts.init(chartRef.current);
+    }
+
+    let xAxisCategories: string[] = [];
+    let serieEntrada: number[] = [];
+    let serieSaida: number[] = [];
+    let serieRestante: number[] = [];
+
+    if (selectedMonth === 'TODOS') {
+      xAxisCategories = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      serieEntrada = new Array(12).fill(0);
+      serieSaida = new Array(12).fill(0);
+      serieRestante = new Array(12).fill(0);
+
+      MESES.forEach((_, monthIndex) => {
+        const lotesMes = lotes.filter((l) => {
+          const d = new Date(l.createdAt);
+          return d.getFullYear() === selectedYear && d.getMonth() === monthIndex;
+        });
+
+        const ent = lotesMes.reduce((s, l) => s + (l.quantidadeOriginal || l.quantidadeCabecas), 0);
+        const sai = lotesMes.reduce((s, l) => s + l.quantidadeVendida, 0);
+        const res = Math.max(0, ent - sai);
+
+        serieEntrada[monthIndex] = ent;
+        serieSaida[monthIndex] = sai;
+        serieRestante[monthIndex] = res;
+      });
+
+    } else {
+      xAxisCategories = ['Dias 1-5', 'Dias 6-10', 'Dias 11-15', 'Dias 16-20', 'Dias 21-25', 'Dias 26-31'];
+      serieEntrada = new Array(6).fill(0);
+      serieSaida = new Array(6).fill(0);
+      serieRestante = new Array(6).fill(0);
+
+      const lotesDoMes = lotes.filter((l) => {
+        const d = new Date(l.createdAt);
+        return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+      });
+
+      lotesDoMes.forEach((l) => {
+        const dia = new Date(l.createdAt).getDate();
+        let binIdx = 0;
+        if (dia >= 1 && dia <= 5) binIdx = 0;
+        else if (dia >= 6 && dia <= 10) binIdx = 1;
+        else if (dia >= 11 && dia <= 15) binIdx = 2;
+        else if (dia >= 16 && dia <= 20) binIdx = 3;
+        else if (dia >= 21 && dia <= 25) binIdx = 4;
+        else binIdx = 5;
+
+        serieEntrada[binIdx] += (l.quantidadeOriginal || l.quantidadeCabecas);
+        serieSaida[binIdx] += l.quantidadeVendida;
+      });
+
+      for (let i = 0; i < 6; i++) {
+        serieRestante[i] = Math.max(0, serieEntrada[i] - serieSaida[i]);
+      }
+    }
+
+    const option = {
+      color: ['#10b981', '#f59e0b', '#3b82f6'],
+      title: {
+        text: selectedMonth === 'TODOS' 
+          ? `Fluxo do Rebanho - Ano ${selectedYear}` 
+          : `Fluxo Detalhado de ${MESES[selectedMonth]} / ${selectedYear}`,
+        textStyle: { fontSize: 14, fontWeight: 'bold', color: '#0f172a' }
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#e2e8f0',
+        textStyle: { color: '#0f172a', fontWeight: 'bold' }
+      },
+      legend: { data: ['Entrada', 'Saída', 'Restante'], top: 25, right: 10 },
+      grid: { left: '2%', right: '3%', bottom: '3%', containLabel: true },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: xAxisCategories,
+        axisLine: { lineStyle: { color: '#cbd5e1' } },
+        axisLabel: { color: '#64748b', fontWeight: '600' }
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: '#f1f5f9' } },
+        axisLabel: { color: '#64748b' }
+      },
+      series: [
+        { name: 'Entrada', type: 'line', smooth: true, itemStyle: { color: '#10b981' }, lineStyle: { width: 3, color: '#10b981' }, showSymbol: false, data: serieEntrada },
+        { name: 'Saída', type: 'line', smooth: true, itemStyle: { color: '#f59e0b' }, lineStyle: { width: 3, color: '#f59e0b' }, showSymbol: false, data: serieSaida },
+        { name: 'Restante', type: 'line', smooth: true, itemStyle: { color: '#3b82f6' }, lineStyle: { width: 3, color: '#3b82f6' }, showSymbol: false, data: serieRestante }
+      ]
+    };
+
+    chartInstanceRef.current.setOption(option, true);
+  }, [echartsLoaded, lotes, selectedYear, selectedMonth]);
+
+  // 2. ECHARTS: ROSCA TAXA DE COMERCIALIZAÇÃO
+  useEffect(() => {
+    if (!echartsLoaded || !pieChartRef.current) return;
+
+    if (!pieChartInstanceRef.current) {
+      pieChartInstanceRef.current = echarts.init(pieChartRef.current);
+    }
+
+    const option = {
+      tooltip: { trigger: 'item', formatter: '{b}: <strong>{c} cabeças</strong> ({d}%)' },
+      legend: { orient: 'horizontal', bottom: '0%', left: 'center', icon: 'circle', textStyle: { color: '#475569', fontWeight: '600', fontSize: 11 } },
+      series: [
+        {
+          name: 'Fluxo do Rebanho',
+          type: 'pie',
+          radius: ['62%', '82%'],
+          center: ['50%', '42%'],
+          avoidLabelOverlap: false,
+          itemStyle: { borderRadius: 8, borderColor: '#ffffff', borderWidth: 3 },
+          label: {
+            show: true,
+            position: 'center',
+            formatter: () => `{val|${porcentagemSaida}%}\n{lbl|Comercializado}`,
+            rich: {
+              val: { fontSize: 32, fontWeight: '900', color: '#0f172a', lineHeight: 38 },
+              lbl: { fontSize: 12, fontWeight: '700', color: '#64748b' }
+            }
+          },
+          data: [
+            { value: saidaGadosCard, name: 'Saída (Vendidos)', itemStyle: { color: '#059669' } },
+            { value: gadosRestantesCard, name: 'Gados Restantes no Pasto', itemStyle: { color: '#e2e8f0' } }
+          ]
+        }
+      ]
+    };
+
+    pieChartInstanceRef.current.setOption(option, true);
+  }, [echartsLoaded, saidaGadosCard, gadosRestantesCard, porcentagemSaida]);
+
+  // 3. ECHARTS: BARRAS - TOP 5 MESES DE SAÍDA
+  useEffect(() => {
+    if (!echartsLoaded || !barChartRef.current) return;
+
+    if (!barChartInstanceRef.current) {
+      barChartInstanceRef.current = echarts.init(barChartRef.current);
+    }
+
+    const categoriasX = top5MesesSaida.map(m => m.nome);
+    const dadosValores = top5MesesSaida.map(m => m.valor);
+
+    const option = {
+      tooltip: { 
+        trigger: 'axis', 
+        axisPointer: { type: 'shadow' }, 
+        formatter: (params: any[]) => {
+          const item = params[0];
+          const mesObj = top5MesesSaida[item.dataIndex];
+          return `${mesObj?.nomeCompleto || item.name}: <strong>${item.value} cabeças vendidas</strong>`;
+        }
+      },
+      grid: { top: '12%', left: '3%', right: '3%', bottom: '8%', containLabel: true },
+      xAxis: { 
+        type: 'category', 
+        data: categoriasX, 
+        axisLine: { show: false }, 
+        axisTick: { show: false }, 
+        axisLabel: { color: '#64748b', fontWeight: '700', fontSize: 11 } 
+      },
+      yAxis: { 
+        type: 'value', 
+        splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } }, 
+        axisLabel: { color: '#64748b', fontWeight: '600' } 
+      },
+      series: [
+        {
+          name: 'Saídas no Mês',
+          type: 'bar',
+          barWidth: '38%',
+          data: dadosValores,
+          itemStyle: {
+            borderRadius: [6, 6, 0, 0],
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#10b981' },
+              { offset: 1, color: '#059669' }
+            ])
+          }
+        }
+      ]
+    };
+
+    barChartInstanceRef.current.setOption(option, true);
+  }, [echartsLoaded, top5MesesSaida]);
+
+  // Redimensionamento Responsivo
+  useEffect(() => {
+    const handleResize = () => {
+      chartInstanceRef.current?.resize();
+      pieChartInstanceRef.current?.resize();
+      barChartInstanceRef.current?.resize();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  if (loading && !lotes.length) {
     return (
       <div className="p-12 flex flex-col items-center justify-center space-y-3 font-sans text-slate-400">
         <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
-        <p className="text-xs font-bold">Carregando informações reais do dashboard...</p>
+        <p className="text-xs font-bold">Carregando dados do dashboard de análise...</p>
       </div>
     );
   }
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto font-sans text-slate-800">
-      
+      <style>{customDensityLabelStyle}</style>
+
       {/* Cabeçalho */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Análise de Vendas de Lotes
+              Dashboard de Análise
             </h1>
             <span className="inline-flex items-center gap-1.5 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs">
               <Building2 className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -247,403 +580,419 @@ export const AnalyticsDashboard: React.FC = () => {
             </span>
           </div>
           <p className="text-slate-500 text-sm mt-1">
-            Visão geral da comercialização de gado e balanço financeiro real da propriedade.
+            Acompanhe a movimentação de entrada, saída, estoque restante e densidade do rebanho por pasto.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white border border-slate-200 px-3.5 py-2 rounded-lg shadow-xs">
-          <Calendar className="w-4 h-4 text-slate-400" />
-          <span className="text-xs font-semibold text-slate-500 uppercase">Ano:</span>
+        <div className="flex items-center gap-3 bg-white border border-slate-200 p-2 rounded-xl shadow-2xs flex-wrap">
+          <div className="flex items-center gap-2 px-2">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-500 uppercase">PERÍODO:</span>
+          </div>
+
           <select 
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value === 'TODOS' ? 'TODOS' : Number(e.target.value))}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
           >
-            <option value={2026}>2026</option>
-            <option value={2025}>2025</option>
+            <option value="TODOS">Visão Anual (Todos os Meses)</option>
+            {MESES.map((nomeMes, index) => (
+              <option key={index} value={index}>
+                {nomeMes}
+              </option>
+            ))}
           </select>
-        </div>
-      </div>
 
-      {/* Indicadores Principais */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Lotes em Aberto
-            </p>
-            <p className="text-3xl font-extrabold text-amber-600 mt-1">
-              {openLots.length} <span className="text-sm font-normal text-slate-500">anunciados</span>
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
-            <Clock className="w-6 h-6" />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Vendas Concluídas
-            </p>
-            <p className="text-3xl font-extrabold text-emerald-600 mt-1">
-              {closedSales.length} <span className="text-sm font-normal text-slate-500">compradores</span>
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Saída do Mês Atual
-            </p>
-            <p className="text-3xl font-extrabold text-slate-900 mt-1">
-              {saidaMesAtual} <span className="text-sm font-normal text-slate-500">gados</span>
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-700">
-            <TrendingUp className="w-6 h-6" />
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            <select value={2026} disabled className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none">
+              <option value={2026}>2026</option>
+            </select>
           </div>
         </div>
       </div>
 
-      {/* Gráfico de Progressão Mensal */}
-      <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-6">
-        <div className="mb-6">
-          <h2 className="text-lg font-bold text-slate-900">Progressão das Vendas do Mês</h2>
-          <p className="text-slate-500 text-sm">Quantidade real de gados comercializados ao longo dos meses.</p>
+      {/* 4 CARDS DE INDICADORES */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs hover:border-emerald-300 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">ENTRADA DE GADOS</p>
+            <p className="text-3xl font-black text-emerald-600">{entradaGadosCard} <span className="text-xs font-medium text-slate-500">cabeças</span></p>
+            <p className="text-[11px] text-slate-400 font-medium">Lançados no mercado</p>
+          </div>
+          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shrink-0">
+            <PlusCircle className="w-6 h-6" />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <div className="lg:col-span-7 space-y-4 lg:border-r lg:border-slate-100 lg:pr-8">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Volume de Gados Vendidos
-            </p>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs hover:border-amber-300 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">SAÍDA DE GADOS</p>
+            <p className="text-3xl font-black text-amber-600">{saidaGadosCard} <span className="text-xs font-medium text-slate-500">cabeças</span></p>
+            <p className="text-[11px] text-slate-400 font-medium">Comercializados no mês</p>
+          </div>
+          <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 shrink-0">
+            <MinusCircle className="w-6 h-6" />
+          </div>
+        </div>
 
-            <div className="space-y-3 pt-1 max-h-[460px] overflow-y-auto pr-2">
-              {monthlyProgression.map((item) => {
-                const percentage = maxGados > 0 ? Math.round((item.totalGados / maxGados) * 100) : 0;
-                return (
-                  <div key={item.monthIndex} className="space-y-1">
-                    <div className="flex justify-between text-xs font-medium">
-                      <span className="text-slate-700 font-semibold">{item.month}</span>
-                      <span className="font-bold text-slate-900">{item.totalGados} gados</span>
-                    </div>
-                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-emerald-600 rounded-full transition-all duration-500"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs hover:border-blue-300 transition-all flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">GADOS RESTANTES</p>
+            <p className="text-3xl font-black text-blue-600">{gadosRestantesCard} <span className="text-xs font-medium text-slate-500">disponíveis</span></p>
+            <p className="text-[11px] text-slate-400 font-medium">Restante no pasto</p>
+          </div>
+          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 shrink-0">
+            <Box className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-900 to-slate-950 p-5 rounded-2xl border border-slate-800 text-white shadow-md flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-extrabold text-emerald-400 uppercase tracking-wider">ENTRADA FINANCEIRA</p>
+            <p className="text-2xl font-black text-white tracking-tight">{entradaFinanceiraCard.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            <p className="text-[11px] text-slate-400 font-medium">Faturamento no período</p>
+          </div>
+          <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 shrink-0">
+            <DollarSign className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* GRÁFICO PRINCIPAL DE PROGRESSÃO */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
+        <div className="border-b border-slate-100 pb-4 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-base font-bold text-slate-900">
+                Progressão do Rebanho (Entrada vs Saída vs Restante)
+              </h2>
+            </div>
+            <span className="text-xs font-extrabold px-3 py-1 bg-slate-100 text-slate-700 rounded-full">
+              {selectedMonth === 'TODOS' ? 'Visão Mensal (12 Meses)' : 'Intervalos de 5 dias'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 font-medium pl-7">
+            O gráfico consolida e registra as informações do rebanho assim que cada determinado período se encerra.
+          </p>
+        </div>
+
+        <div className="w-full h-[360px] relative">
+          {!echartsLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-400">
+              <Loader2 className="w-5 h-5 animate-spin text-emerald-600 mr-2" />
+              Carregando biblioteca de gráficos...
+            </div>
+          )}
+          <div ref={chartRef} className="w-full h-full" />
+        </div>
+      </div>
+
+      {/* SEÇÃO INFERIOR: GRÁFICOS LADO A LADO */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <PieIcon className="w-4 h-4 text-emerald-600" />
+                Taxa de Comercialização do Rebanho
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Proporção de cabeças vendidas em relação ao total de entradas registradas.
+              </p>
+            </div>
+            <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+              {porcentagemSaida}% Concluído
+            </span>
+          </div>
+
+          <div className="py-2 flex items-center justify-center relative">
+            <div ref={pieChartRef} className="w-full h-[260px]" />
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-4 text-center">
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">Entradas Total</span>
+              <span className="text-base font-black text-slate-800">{entradaGadosCard} cabeças</span>
+            </div>
+            <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100">
+              <span className="text-[10px] font-bold text-emerald-800 block uppercase">Vendidos (Saída)</span>
+              <span className="text-base font-black text-emerald-700">{saidaGadosCard} cabeças</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-emerald-600" />
+                Top 5 Meses de Saída
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Meses com maior volume de comercialização.
+              </p>
+            </div>
+            <span className="text-[10px] font-extrabold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+              Top 5
+            </span>
+          </div>
+
+          <div className="py-2 relative">
+            <div ref={barChartRef} className="w-full h-[260px]" />
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 text-center">
+            <span className="text-[11px] font-semibold text-slate-500">
+              Total comercializado no período: <strong className="text-slate-900">{saidaGadosCard} cabeças</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* NOVO INTEGRADO: GRÁFICO GEOGRÁFICO DE DENSIDADE DOS PASTOS */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0">
+              <MapPin className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                Densidade Populacional nos Pastos do Terreno
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Povoamento em tempo real por área demarcada (com abates/vendas descontados e sobras mantidas).
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl flex items-center gap-2 text-xs font-black text-emerald-800 shrink-0 self-start sm:self-auto">
+            <Users className="w-4 h-4 text-emerald-600" />
+            <span>Mapeados no Terreno: {totalGadoNoMapa} cabeças</span>
+          </div>
+        </div>
+
+        <div className="w-full h-[450px] rounded-2xl overflow-hidden border border-slate-200 relative bg-slate-900">
+          {terrenoGeoJson ? (
+            <MapContainer
+              center={[-15.7801, -47.9292]}
+              zoom={13}
+              style={{ width: '100%', height: '100%' }}
+              scrollWheelZoom={true}
+            >
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                attribution="&copy; Esri"
+              />
+
+              <GeoJSON
+                key={JSON.stringify(terrenoGeoJson)}
+                data={terrenoGeoJson}
+                style={{
+                  color: '#64748b',
+                  weight: 1.5,
+                  fillColor: '#0f172a',
+                  fillOpacity: 0.35
+                }}
+              />
+
+              {pastosComDensidade.map((pasto) => {
+                if (!pasto.geojson) return null;
+                try {
+                  const geoData = typeof pasto.geojson === 'string' ? JSON.parse(pasto.geojson) : pasto.geojson;
+                  const cor = getCorDensidade(pasto.quantidadeGadoAtual);
+
+                  return (
+                    <GeoJSON
+                      key={`${pasto.id}-${pasto.quantidadeGadoAtual}`}
+                      data={geoData}
+                      style={{
+                        color: cor.stroke,
+                        weight: 3,
+                        fillColor: cor.fill,
+                        fillOpacity: 0.65
+                      }}
+                      onEachFeature={(_, layer) => {
+                        const conteudoTooltip = `
+                          <div style="text-align: center;">
+                            <strong style="color: #6ee7b7; text-transform: uppercase;">${pasto.nome}</strong><br/>
+                            <span style="font-size: 14px; font-weight: 900;">${pasto.quantidadeGadoAtual} cabeças</span><br/>
+                            <span style="font-size: 10px; opacity: 0.8;">Status: ${pasto.quantidadeGadoAtual === 0 ? 'Sem gado' : 'Povoado'}</span>
+                          </div>
+                        `;
+                        layer.bindTooltip(conteudoTooltip, {
+                          permanent: true,
+                          direction: 'center',
+                          className: 'pasto-density-tooltip'
+                        });
+                      }}
+                    />
+                  );
+                } catch (e) {
+                  return null;
+                }
               })}
+
+              <MapController geojson={terrenoGeoJson} />
+            </MapContainer>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-slate-400 space-y-2">
+              <Info className="w-10 h-10 text-slate-500 mb-1" />
+              <p className="text-sm font-bold text-white">Nenhum KML importado para esta fazenda</p>
+              <p className="text-xs text-slate-400">Importe a planta do terreno na tela de Gestão da Propriedade para ativar a visualização em mapa.</p>
             </div>
-          </div>
+          )}
+        </div>
 
-          <div className="lg:col-span-5 space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Informações Detalhadas
-            </p>
-            
-            <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden bg-slate-50/50 max-h-[460px] overflow-y-auto">
-              {monthlyProgression.map((item) => (
-                <div 
-                  key={item.monthIndex} 
-                  className="p-3.5 flex items-center justify-between hover:bg-white transition-colors"
-                >
-                  <span className="font-bold text-sm text-slate-800">
-                    {item.month}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenModal(item.monthIndex)}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Info className="w-3.5 h-3.5 text-emerald-600" />
-                    Mais informações
-                  </button>
-                </div>
-              ))}
+        {/* Legenda de Gradiente de Densidade */}
+        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-600">
+          <span className="text-slate-400 uppercase text-[10px] tracking-wider font-extrabold">Densidade da Lotação:</span>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-md bg-slate-300 border border-slate-400" />
+              <span>0 (Vazio)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-md bg-emerald-300 border border-emerald-600" />
+              <span>1 - 20 cabeças</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-md bg-yellow-300 border border-yellow-600" />
+              <span>21 - 50 cabeças</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-md bg-orange-400 border border-orange-600" />
+              <span>51 - 100 cabeças</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-md bg-rose-500 border border-rose-700" />
+              <span>+100 (Alta densidade)</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Resumo dos Lotes em Aberto e Fechados */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Lotes em Aberto */}
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse" />
-              <h2 className="text-base font-bold text-slate-900">Lotes em Aberto (Anunciados)</h2>
+      {/* REGISTRO DE PROCESSOS */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-emerald-600" />
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Registro de Processos
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Histórico sequencial das movimentações de entrada e saída do rebanho no período.
+              </p>
             </div>
-            <span className="text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
-              Disponíveis
-            </span>
           </div>
 
-          <div className="space-y-3">
-            {openLots.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center font-medium">
-                Nenhum lote em aberto cadastrado para esta fazenda.
-              </p>
-            ) : (
-              openLots.map((lot) => {
-                const valorNum = Number(lot.valorTotal || 0);
+          <div className="flex items-center gap-3">
+            <select
+              value={filterProcessType}
+              onChange={(e) => setFilterProcessType(e.target.value as 'TODOS' | 'ENTRADA' | 'SAIDA')}
+              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+            >
+              <option value="TODOS">Todos os Processos</option>
+              <option value="ENTRADA">Somente Entradas</option>
+              <option value="SAIDA">Somente Saídas</option>
+            </select>
 
-                return (
-                  <div key={lot.id} className="p-4 border border-slate-200/80 rounded-xl flex justify-between items-center bg-white hover:border-slate-300 transition-colors">
-                    <div className="space-y-1">
-                      <h3 className="font-bold text-slate-900 text-sm">{lot.title}</h3>
-                      
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-slate-500">Anunciado em: {lot.publishedAt}</span>
-                        <span className="text-slate-300">•</span>
-                        {valorNum > 0 ? (
-                          <span className="font-extrabold text-emerald-700">
-                            {valorNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </span>
-                        ) : (
-                          <span className="font-semibold text-slate-400 italic">Sob consulta</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <span className="inline-block px-2.5 py-1 bg-slate-100 text-slate-800 font-bold text-xs rounded-md">
-                        {lot.quantity} gados
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-600 rounded-full shrink-0">
+              {historicoFiltrado.length} registros
+            </span>
           </div>
         </div>
 
-        {/* Lotes Fechados (Resumo) */}
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full" />
-              <h2 className="text-base font-bold text-slate-900">Lotes Fechados (Resumo)</h2>
-            </div>
-            <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
-              Confirmados
-            </span>
+        {historicoFiltrado.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+            Nenhuma movimentação de gado registrada para o filtro selecionado.
           </div>
-
-          <div className="space-y-3">
-            {closedSales.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center font-medium">
-                Nenhuma venda de lote concluída até o momento.
-              </p>
-            ) : (
-              closedSales.slice(0, 5).map((closed) => (
-                <div key={closed.id} className="p-3.5 border border-slate-200/80 rounded-lg bg-slate-50/50 flex justify-between items-center">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <p className="font-bold text-slate-900 text-xs">{closed.comprador}</p>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Data: {closed.data}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-extrabold text-emerald-700 text-xs block">
-                      {closed.valorNegociado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </span>
-                    <span className="text-[11px] font-semibold text-slate-500">
-                      {closed.quantidadeGado} gados
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-      </div>
-
-      {/* Pop-up Modal de Vendas Detalhadas do Mês */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[88vh] shadow-2xl border border-slate-200/80 flex flex-col overflow-hidden">
-            
-            <div className="p-5 bg-white border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1">
-                  <button
-                    type="button"
-                    onClick={handlePrevMonth}
-                    title="Mês anterior"
-                    className="p-1.5 hover:bg-white text-slate-700 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  
-                  <span className="px-3 text-xs font-bold text-slate-900 min-w-[130px] text-center select-none">
-                    {TODOS_OS_MESES[activeMonthIndexModal]} / {selectedYear}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={handleNextMonth}
-                    title="Próximo mês"
-                    className="p-1.5 hover:bg-white text-slate-700 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowFilterBar(!showFilterBar)}
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                    showFilterBar || filterComprador || filterData
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                  }`}
-                >
-                  <Filter className="w-3.5 h-3.5" />
-                  <span>Filtrar</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <X className="w-4 h-4" />
-                  <span>Fechar janela</span>
-                </button>
-              </div>
-            </div>
-
-            {showFilterBar && (
-              <div className="p-4 bg-slate-50/80 border-b border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Filtrar por Comprador..."
-                    value={filterComprador}
-                    onChange={(e) => {
-                      setFilterComprador(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="w-full pl-10 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                </div>
-
-                {/* Filtro de Data com Máscara Automática (DD/MM/AAAA) */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    maxLength={10}
-                    placeholder="DD/MM/AAAA"
-                    value={filterData}
-                    onChange={(e) => {
-                      const valorFormatado = aplicarMascaraData(e.target.value);
-                      setFilterData(valorFormatado);
-                      setCurrentPage(1);
-                    }}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="p-6 overflow-y-auto flex-1">
-              {paginatedVendas.length === 0 ? (
-                <div className="p-12 text-center text-slate-400 space-y-2">
-                  <UserCheck className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-xs font-bold">Nenhuma venda realizada registrada para este mês.</p>
-                </div>
-              ) : (
-                <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs bg-white">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200/80 text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
-                        <th className="p-4">Data</th>
-                        <th className="p-4">Comprador</th>
-                        <th className="p-4 text-right">Valor Negociado</th>
-                        <th className="p-4 text-right">Quantidade de Gado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
-                      {paginatedVendas.map((venda, idx) => (
-                        <tr key={venda.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="p-4 font-semibold text-slate-600">{venda.data}</td>
-                          <td className="p-4 font-bold text-slate-900">{venda.comprador}</td>
-                          <td className="p-4 text-right font-extrabold text-emerald-700">
-                            {venda.valorNegociado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </td>
-                          <td className="p-4 text-right">
-                            <span className="inline-block px-2.5 py-1 bg-slate-100 font-bold text-slate-800 rounded-lg">
-                              {venda.quantidadeGado} gados
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50/80 text-[11px] font-extrabold text-slate-400 uppercase tracking-wider border-b border-slate-200/60">
+                  <th className="py-3 px-4">Processo</th>
+                  <th className="py-3 px-4">Data</th>
+                  <th className="py-3 px-4">Hora</th>
+                  <th className="py-3 px-4 text-right">Quantidade</th>
+                  <th className="py-3 px-4 text-right">Valor do Lote</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-800">
+                {historicoFiltrado.map((proc) => {
+                  const isEntrada = proc.tipo === 'ENTRADA';
+                  return (
+                    <tr key={proc.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            isEntrada 
+                              ? 'bg-emerald-50 text-emerald-600 border border-emerald-200/60' 
+                              : 'bg-amber-50 text-amber-600 border border-amber-200/60'
+                          }`}>
+                            {isEntrada ? (
+                              <ArrowDownLeft className="w-4 h-4" />
+                            ) : (
+                              <ArrowUpRight className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-900 block">
+                              {proc.nomeProcesso}
                             </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                            <span className="text-[11px] text-slate-400">
+                              {proc.detalhe}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
-              <span>
-                Mostrando <strong className="text-slate-800">{vendasDoMesAtivo.length}</strong> vendas no mês
-              </span>
+                      <td className="py-3.5 px-4 text-slate-600 font-semibold">
+                        {proc.data}
+                      </td>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5 text-slate-600" />
-                </button>
+                      <td className="py-3.5 px-4 text-slate-500 font-semibold">
+                        {proc.hora}
+                      </td>
 
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-                  <button
-                    key={pageNum}
-                    type="button"
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`w-7 h-7 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                      currentPage === pageNum
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                ))}
+                      <td className="py-3.5 px-4 text-right">
+                        <span className={`font-extrabold px-2.5 py-1 rounded-lg inline-block ${
+                          isEntrada 
+                            ? 'bg-emerald-50 text-emerald-700' 
+                            : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          {isEntrada ? `+ ${proc.quantidade}` : `- ${proc.quantidade}`} cabeças
+                        </span>
+                      </td>
 
-                <button
-                  type="button"
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
-                >
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
-                </button>
-              </div>
-            </div>
+                      <td className="py-3.5 px-4 text-right font-extrabold text-slate-900">
+                        {proc.valor > 0 
+                          ? proc.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                          : 'R$ 0,00'}
+                      </td>
 
+                      <td className="py-3.5 px-4 text-center">
+                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                          isEntrada 
+                            ? 'bg-blue-50 text-blue-700 border-blue-200/60' 
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                        }`}>
+                          {proc.statusLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
     </div>
   );

@@ -42,11 +42,25 @@ model Fazenda {
   areaValue      Float    @default(0)
   areaUnit       String   @default("ha")
   cattleCapacity Int      @default(0)
+  geojson        String?  @db.Text
   
   usuarioId      String
   usuario        Usuario  @relation(fields: [usuarioId], references: [id])
   
+  pastos         Pasto[]
   lotes          Lote[]
+}
+
+model Pasto {
+  id          String   @id @default(uuid())
+  nome        String
+  geojson     String?  @db.Text // Armazena as coordenadas do polígono em JSON
+  
+  fazendaId   String
+  fazenda     Fazenda  @relation(fields: [fazendaId], references: [id], onDelete: Cascade)
+  
+  lotes       Lote[]
+  createdAt   DateTime @default(now())
 }
 
 model Lote {
@@ -54,12 +68,15 @@ model Lote {
   quantidadeCabecas  Int
   valorTotal         Float?   @default(0)
   status             String   @default("RASCUNHO")
-  recusasCount       Int      @default(0) // <-- Campo de contagem de recusas
+  recusasCount       Int      @default(0)
   videoOriginalUrl   String?
   videoProcessadoUrl String?
 
   fazendaId          String
   fazenda            Fazenda  @relation(fields: [fazendaId], references: [id])
+
+  pastoId            String?  
+  pasto              Pasto?   @relation(fields: [pastoId], references: [id])
 
   consumerId         String?
   consumerName       String?

@@ -12,6 +12,7 @@ export interface Farm {
   areaUnit: AreaUnit;
   cattleCapacity: number;
   isActive: boolean;
+  geojson?: string | null; // Persistência da geometria digitalizada
 }
 
 export interface UserSession {
@@ -35,7 +36,7 @@ interface FarmContextType {
   logout: () => void;
   setActiveFarmById: (id: string) => void;
   updateActiveFarm: (updatedData: Partial<Farm>) => Promise<void>;
-  addNewFarm: (newFarmData: OmittedFarmInput) => Promise<void>;
+  addNewFarm: (newFarmData: OmittedFarmInput) => Promise<Farm | null>;
   formatAreaText: (value: number, unit: AreaUnit) => string;
 }
 
@@ -47,34 +48,20 @@ const defaultFarm: Farm = {
   areaValue: 0,
   areaUnit: 'ha',
   cattleCapacity: 0,
-  isActive: true
+  isActive: true,
+  geojson: null
 };
 
 const FarmContext = createContext<FarmContextType | undefined>(undefined);
 
 export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [userName, setUserName] = useState<string>(() => {
-    return localStorage.getItem('@AgroIntelli:userName') || 'Produtor';
-  });
-
-  const [userId, setUserId] = useState<string | null>(() => {
-    return localStorage.getItem('@AgroIntelli:userId') || null;
-  });
+  const [userName, setUserName] = useState<string>(() => localStorage.getItem('@AgroIntelli:userName') || 'Produtor');
+  const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('@AgroIntelli:userId') || null);
 
   const [userSession, setUserSessionState] = useState<UserSession | null>(() => {
     const saved = localStorage.getItem('@AgroIntelli:userSession');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Erro ao restaurar sessão:', e);
-      }
-    }
-    const id = localStorage.getItem('@AgroIntelli:userId');
-    const nome = localStorage.getItem('@AgroIntelli:userName');
-    const tipo = (localStorage.getItem('@AgroIntelli:userType') as 'produtor' | 'comprador') || undefined;
-    if (id && nome) {
-      return { id, nome, tipo };
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
     }
     return null;
   });
@@ -82,18 +69,14 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userFarms, setUserFarms] = useState<Farm[]>(() => {
     const savedFarms = localStorage.getItem('@AgroIntelli:userFarms');
     if (savedFarms) {
-      try {
-        return JSON.parse(savedFarms);
-      } catch (e) {
-        console.error('Erro ao restaurar fazendas salvas:', e);
-      }
+      try { return JSON.parse(savedFarms); } catch (e) { console.error(e); }
     }
     return [defaultFarm];
   });
 
   const activeFarm = userFarms.find((f) => f.isActive) || userFarms[0] || defaultFarm;
 
-  // Busca e sincroniza automaticamente todas as fazendas do banco de dados na inicialização/F5
+  // Reidratação automática mantendo o geojson retornado pelo banco
   useEffect(() => {
     const currentUserId = userId || localStorage.getItem('@AgroIntelli:userId');
 
@@ -112,7 +95,8 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 areaValue: Number(f.areaValue || 0),
                 areaUnit: (f.areaUnit as AreaUnit) || 'ha',
                 cattleCapacity: Number(f.cattleCapacity || 0),
-                isActive: activeId ? f.id === activeId : idx === 0
+                isActive: activeId ? f.id === activeId : idx === 0,
+                geojson: f.geojson || null
               }));
 
               localStorage.setItem('@AgroIntelli:userFarms', JSON.stringify(fazendasAtualizadas));
@@ -120,11 +104,10 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
           }
         })
-        .catch((err) => console.error('Erro ao reidratar fazendas do banco:', err));
+        .catch((err) => console.error('Erro ao reidratar fazendas:', err));
     }
   }, [userId, userName]);
 
-  // Sincroniza alterações no localStorage
   useEffect(() => {
     if (userFarms.length > 0 && userFarms[0].id !== 'default-farm') {
       localStorage.setItem('@AgroIntelli:userFarms', JSON.stringify(userFarms));
@@ -134,21 +117,17 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const setUserSession = (userData: any) => {
     const extractedId = userData?.id || userData?.usuarioId || userData?.usuario?.id;
     const extractedName = userData?.nome || userData?.name || userData?.usuario?.nome || 'Produtor';
-    const extractedEmpresa = userData?.empresa;
-    const extractedTipo = userData?.tipo || (localStorage.getItem('@AgroIntelli:userType') as 'produtor' | 'comprador');
 
     const sessionObj: UserSession = {
       id: extractedId,
       nome: extractedName,
-      empresa: extractedEmpresa,
-      tipo: extractedTipo,
+      tipo: userData?.tipo,
       fazenda: userData?.fazenda,
       fazendas: userData?.fazendas
     };
 
     setUserSessionState(sessionObj);
     localStorage.setItem('@AgroIntelli:userSession', JSON.stringify(sessionObj));
-
     setUserName(extractedName);
     localStorage.setItem('@AgroIntelli:userName', extractedName);
 
@@ -168,16 +147,12 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         areaValue: Number(f.areaValue || 0),
         areaUnit: (f.areaUnit as AreaUnit) || 'ha',
         cattleCapacity: Number(f.cattleCapacity || 0),
-        isActive: index === 0
+        isActive: index === 0,
+        geojson: f.geojson || null
       }));
 
       setUserFarms(fazendasMapeadas);
       localStorage.setItem('@AgroIntelli:userFarms', JSON.stringify(fazendasMapeadas));
-    } else {
-      setUserFarms([{
-        ...defaultFarm,
-        owner: extractedName
-      }]);
     }
   };
 
@@ -186,19 +161,12 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUserId(null);
     setUserName('Produtor');
     setUserFarms([defaultFarm]);
-    localStorage.removeItem('@AgroIntelli:userSession');
-    localStorage.removeItem('@AgroIntelli:userId');
-    localStorage.removeItem('@AgroIntelli:userName');
-    localStorage.removeItem('@AgroIntelli:userType');
-    localStorage.removeItem('@AgroIntelli:userFarms');
+    localStorage.clear();
   };
 
   const setActiveFarmById = (id: string) => {
     setUserFarms((prev) => {
-      const atualizadas = prev.map((f) => ({
-        ...f,
-        isActive: f.id === id
-      }));
+      const atualizadas = prev.map((f) => ({ ...f, isActive: f.id === id }));
       localStorage.setItem('@AgroIntelli:userFarms', JSON.stringify(atualizadas));
       return atualizadas;
     });
@@ -218,22 +186,18 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           areaUnit: updatedData.areaUnit,
           cattleCapacity: updatedData.cattleCapacity,
           name: updatedData.name,
-          location: updatedData.location
+          location: updatedData.location,
+          geojson: updatedData.geojson
         });
       } catch (error) {
-        console.error('Erro ao atualizar fazenda no banco de dados:', error);
+        console.error('Erro ao atualizar fazenda no banco:', error);
       }
     }
   };
 
-  const addNewFarm = async (newFarmData: OmittedFarmInput) => {
+  const addNewFarm = async (newFarmData: OmittedFarmInput): Promise<Farm | null> => {
     const currentUserId = userId || localStorage.getItem('@AgroIntelli:userId');
-
-    if (!currentUserId) {
-      console.error('ID do usuário não encontrado para vincular a nova fazenda.');
-      alert('Sessão do usuário não identificada. Por favor, faça login novamente para revalidar seu acesso.');
-      return;
-    }
+    if (!currentUserId) return null;
 
     try {
       const res = await api.post('/api/fazendas', {
@@ -247,69 +211,43 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (res.data?.fazenda?.id) {
         const realDbFarm = res.data.fazenda;
-
         const newFarm: Farm = {
           id: realDbFarm.id,
           name: realDbFarm.nome || newFarmData.name,
           owner: userName,
           location: realDbFarm.localizacao || newFarmData.location,
-          areaValue: Number(realDbFarm.areaValue || newFarmData.areaValue || 0),
-          areaUnit: (realDbFarm.areaUnit as AreaUnit) || newFarmData.areaUnit || 'ha',
-          cattleCapacity: Number(realDbFarm.cattleCapacity || newFarmData.cattleCapacity || 0),
-          isActive: false
+          areaValue: Number(realDbFarm.areaValue || 0),
+          areaUnit: (realDbFarm.areaUnit as AreaUnit) || 'ha',
+          cattleCapacity: Number(realDbFarm.cattleCapacity || 0),
+          isActive: true,
+          geojson: null
         };
 
         setUserFarms((prev) => {
-          const listaAtualizada = [...prev, newFarm];
+          const listaAtualizada = prev.map((f) => ({ ...f, isActive: false })).concat(newFarm);
           localStorage.setItem('@AgroIntelli:userFarms', JSON.stringify(listaAtualizada));
           return listaAtualizada;
         });
-      } else {
-        throw new Error('Resposta do servidor não incluiu o ID da fazenda.');
+
+        return newFarm;
       }
+      return null;
     } catch (error) {
-      console.error('Erro ao criar nova fazenda no banco de dados:', error);
-      alert('Falha ao registrar a nova fazenda no banco de dados.');
+      console.error('Erro ao criar fazenda:', error);
+      return null;
     }
   };
 
   const formatAreaText = (value: number, unit: AreaUnit): string => {
     if (!value || value <= 0) return '0 ha';
-
-    if (unit === 'ha') {
-      const emM2 = (value * 10000).toLocaleString('pt-BR');
-      return `${value.toLocaleString('pt-BR')} ha (${emM2} m²)`;
-    }
-
-    if (unit === 'm²') {
-      const emHa = (value / 10000).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
-      return `${value.toLocaleString('pt-BR')} m² (${emHa} ha)`;
-    }
-
-    if (unit === 'alq') {
-      const emHa = (value * 2.42).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-      return `${value.toLocaleString('pt-BR')} alqueires (~${emHa} ha)`;
-    }
-
+    if (unit === 'ha') return `${value.toLocaleString('pt-BR')} ha (${(value * 10000).toLocaleString('pt-BR')} m²)`;
+    if (unit === 'm²') return `${value.toLocaleString('pt-BR')} m² (${(value / 10000).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} ha)`;
+    if (unit === 'alq') return `${value.toLocaleString('pt-BR')} alqueires (~${(value * 2.42).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ha)`;
     return `${value} ${unit}`;
   };
 
   return (
-    <FarmContext.Provider
-      value={{
-        activeFarm,
-        userFarms,
-        userName,
-        userId,
-        userSession,
-        setUserSession,
-        logout,
-        setActiveFarmById,
-        updateActiveFarm,
-        addNewFarm,
-        formatAreaText
-      }}
-    >
+    <FarmContext.Provider value={{ activeFarm, userFarms, userName, userId, userSession, setUserSession, logout, setActiveFarmById, updateActiveFarm, addNewFarm, formatAreaText }}>
       {children}
     </FarmContext.Provider>
   );
@@ -317,8 +255,6 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useFarm = () => {
   const context = useContext(FarmContext);
-  if (!context) {
-    throw new Error('useFarm deve ser usado dentro de FarmProvider');
-  }
+  if (!context) throw new Error('useFarm deve ser usado dentro de FarmProvider');
   return context;
 };

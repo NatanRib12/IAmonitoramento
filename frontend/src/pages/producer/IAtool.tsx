@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { 
   UploadCloud, 
   Loader2, 
@@ -12,10 +12,26 @@ import {
   FolderPlus,
   Trash2,
   Tractor,
-  DollarSign
+  DollarSign,
+  MapPin,
+  Archive,
+  Lock,
+  PlusCircle
 } from 'lucide-react';
 import { useVideoProcessing } from '../../context/VideoProcessing';
 import { useFarm } from '../../context/FarmContext';
+import { api } from '../../services/api';
+
+interface Pasto {
+  id: string;
+  nome: string;
+}
+
+interface LoteReserva {
+  id: string;
+  quantidadeCabecas: number;
+  createdAt: string;
+}
 
 export function ProducerDashboard() {
   const { activeFarm } = useFarm();
@@ -25,7 +41,9 @@ export function ProducerDashboard() {
     totalCabecasIa,
     totalCabecasAnuncio,
     valorLoteAnuncio,
+    pastoSelecionadoId,
     setValorLoteAnuncio,
+    setPastoSelecionadoId,
     isDragging,
     notificado,
     enviandoNotificacao,
@@ -48,6 +66,16 @@ export function ProducerDashboard() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const isConcluido = status === 'concluido';
 
+  // Lista local de pastos cadastrados na fazenda ativa
+  const [pastos, setPastos] = useState<Pasto[]>([]);
+  const [carregandoPastos, setCarregandoPastos] = useState(false);
+
+  // Estados para Gestão de Anexo de Reserva do Rebanho
+  const [lotesReserva, setLotesReserva] = useState<LoteReserva[]>([]);
+  const [carregandoReservas, setCarregandoReservas] = useState(false);
+  const [modalReservaAberto, setModalReservaAberto] = useState(false);
+  const [reservaAnexada, setReservaAnexada] = useState<{ id: string; quantidade: number } | null>(null);
+
   useEffect(() => {
     if (status === 'reproduzindo' && videoRef.current) {
       videoRef.current.load();
@@ -56,6 +84,43 @@ export function ProducerDashboard() {
       });
     }
   }, [status]);
+
+  // Carrega pastos e lotes de reserva da fazenda ativa
+  useEffect(() => {
+    if (activeFarm?.id) {
+      setCarregandoPastos(true);
+      api.get(`/api/fazendas/${activeFarm.id}/pastos`)
+        .then((res) => {
+          if (res.data?.sucesso && Array.isArray(res.data.pastos)) {
+            setPastos(res.data.pastos);
+          } else {
+            setPastos([]);
+          }
+        })
+        .catch((err) => {
+          console.error('Erro ao buscar pastos da fazenda:', err);
+          setPastos([]);
+        })
+        .finally(() => setCarregandoPastos(false));
+
+      setCarregandoReservas(true);
+      api.get(`/api/videos/minha-fazenda?fazendaId=${activeFarm.id}`)
+        .then((res) => {
+          if (res.data?.lotes) {
+            const reservas = res.data.lotes
+              .filter((l: any) => l.status === 'RESERVA')
+              .map((l: any) => ({
+                id: l.id,
+                quantidadeCabecas: Number(l.quantidadeCabecas || 0),
+                createdAt: l.createdAt ? new Date(l.createdAt).toLocaleDateString('pt-BR') : 'Data n/d'
+              }));
+            setLotesReserva(reservas);
+          }
+        })
+        .catch((err) => console.error('Erro ao carregar reservas:', err))
+        .finally(() => setCarregandoReservas(false));
+    }
+  }, [activeFarm?.id]);
 
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -79,8 +144,10 @@ export function ProducerDashboard() {
     if (file) processFile(file);
   };
 
-  // Trava a quantidade para não ultrapassar a contagem da IA nem aceitar valores negativos
+  // Trata a alteração de quantidade do anúncio (desabilitado quando a reserva é anexada)
   const handleQuantidadeAnuncioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (reservaAnexada) return; // Trava contra modificação manual
+
     const valorDigitado = e.target.value;
     if (valorDigitado === '') {
       setTotalCabecasAnuncio('');
@@ -99,14 +166,31 @@ export function ProducerDashboard() {
     }
   };
 
-  // Bloqueia teclas não numéricas e sinais negativos no teclado
+  // Anexa o gado de um lote da reserva e TRAVA o input
+  const handleConfirmarAnexoReserva = (reserva: LoteReserva) => {
+    const qtdBaseIa = totalCabecasIa ?? 0;
+    const qtdFinalAnuncio = qtdBaseIa + reserva.quantidadeCabecas;
+
+    setTotalCabecasAnuncio(qtdFinalAnuncio.toString());
+    setReservaAnexada({
+      id: reserva.id,
+      quantidade: reserva.quantidadeCabecas
+    });
+    setModalReservaAberto(false);
+  };
+
+  // Permite remover a reserva anexada para destravar o input
+  const handleRemoverReservaAnexada = () => {
+    setTotalCabecasAnuncio((totalCabecasIa ?? 0).toString());
+    setReservaAnexada(null);
+  };
+
   const handlePreventNegativeKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (['-', 'e', 'E', '+'].includes(e.key)) {
       e.preventDefault();
     }
   };
 
-  // Trata e valida o input do Valor do Lote (R$)
   const handleValorLoteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     if (val === '') {
@@ -120,11 +204,9 @@ export function ProducerDashboard() {
     }
   };
 
-  // Regras estritas para habilitar a notificação
   const isQtdValida = 
     totalCabecasAnuncio !== '' && 
-    Number(totalCabecasAnuncio) > 0 && 
-    Number(totalCabecasAnuncio) <= (totalCabecasIa ?? 0);
+    Number(totalCabecasAnuncio) > 0;
 
   const isValorValido = 
     valorLoteAnuncio !== '' && 
@@ -237,7 +319,7 @@ export function ProducerDashboard() {
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
               type="button"
-              onClick={salvarNasGaleriasELimpar}
+              onClick={() => salvarNasGaleriasELimpar()}
               disabled={!isConcluido || salvandoGaleria}
               className={`group px-4 py-2.5 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 ${
                 isConcluido && !salvandoGaleria
@@ -251,7 +333,10 @@ export function ProducerDashboard() {
 
             <button
               type="button"
-              onClick={limparEProximoVideo}
+              onClick={() => {
+                setReservaAnexada(null);
+                limparEProximoVideo();
+              }}
               disabled={!isConcluido}
               className={`group px-4 py-2.5 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 ${
                 isConcluido
@@ -269,7 +354,7 @@ export function ProducerDashboard() {
         <div className="lg:col-span-5 xl:col-span-4 space-y-5">
           <h2 className="text-lg font-bold text-slate-900">Resultados da Análise</h2>
 
-          {/* Card 1: Contagem e Edição de Quantidade e Valor */}
+          {/* Card 1: Contagem e Edição de Quantidade, Valor e Pasto */}
           <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm space-y-5">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -289,7 +374,7 @@ export function ProducerDashboard() {
                     {totalCabecasIa ?? 0}
                   </span>
                   <span className="text-xs font-semibold text-slate-400 mt-1 uppercase tracking-wider">
-                    Gado Detectado
+                    Gado Detectado no Vídeo
                   </span>
                 </>
               ) : (
@@ -306,30 +391,116 @@ export function ProducerDashboard() {
             {isConcluido && (
               <div className="pt-3 border-t border-slate-100 space-y-4">
                 
-                {/* INPUT 1: QUANTIDADE DE GADO */}
+                {/* BOTÃO PARA ANEXAR RESERVA DE REBANHO */}
+                {lotesReserva.length > 0 && (
+                  <div className="p-3 bg-emerald-50/60 border border-emerald-200/80 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                        <Archive className="w-3.5 h-3.5 text-emerald-600" />
+                        Gado em Reserva ({lotesReserva.length} lote{lotesReserva.length > 1 ? 's' : ''})
+                      </span>
+
+                      {!reservaAnexada ? (
+                        <button
+                          type="button"
+                          onClick={() => setModalReservaAberto(true)}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Adicionar Reserva</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleRemoverReservaAnexada}
+                          className="px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 font-extrabold text-[10px] rounded-md transition cursor-pointer"
+                        >
+                          Desanexar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* INPUT 1: SELEÇÃO DA ÁREA / PASTO ANALISADO */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
-                    <Edit3 className="w-3.5 h-3.5 text-slate-400" />
-                    Quantidade para Anúncio *
+                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                    Pasto / Área de Análise
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={totalCabecasIa ?? undefined}
-                    onKeyDown={handlePreventNegativeKeys}
-                    value={totalCabecasAnuncio}
-                    onChange={handleQuantidadeAnuncioChange}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
-                    placeholder="Informe a quantidade"
-                  />
+                  {carregandoPastos ? (
+                    <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                      Carregando demarcações da fazenda...
+                    </div>
+                  ) : (
+                    <select
+                      value={pastoSelecionadoId || ''}
+                      onChange={(e) => setPastoSelecionadoId?.(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all cursor-pointer"
+                    >
+                      <option value="">Selecione o pasto (opcional)</option>
+                      {pastos.map((pasto) => (
+                        <option key={pasto.id} value={pasto.id}>
+                          {pasto.nome}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* INPUT 2: QUANTIDADE DE GADO (COM TRAVA DE SEGURANÇA SE A RESERVA FOR SOMADA) */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                      <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                      Quantidade Final para Anúncio *
+                    </label>
+                    {reservaAnexada && (
+                      <span className="text-[10px] font-black uppercase text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-amber-700" /> Campo Trava
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      disabled={!!reservaAnexada}
+                      onKeyDown={handlePreventNegativeKeys}
+                      value={totalCabecasAnuncio}
+                      onChange={handleQuantidadeAnuncioChange}
+                      className={`w-full px-3.5 py-2 border rounded-lg text-sm font-bold transition-all ${
+                        reservaAnexada
+                          ? 'bg-slate-100 border-slate-300 text-slate-700 cursor-not-allowed opacity-90'
+                          : 'bg-slate-50 border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600'
+                      }`}
+                      placeholder="Informe a quantidade"
+                    />
+                  </div>
+
+                  {/* ALERTA EXPLÍCITO DE IMPOSSIBILIDADE DE ALTERAÇÃO MANUAL */}
+                  {reservaAnexada && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 font-semibold space-y-1">
+                      <p className="flex items-center gap-1 font-bold text-amber-900">
+                        <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        Alteração manual desabilitada!
+                      </p>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        Foram adicionadas <strong>+{reservaAnexada.quantidade} cabeças</strong> vindas da Reserva de Rebanho. O valor final ({totalCabecasAnuncio} cabeças) está bloqueado para manter a consistência da auditoria.
+                      </p>
+                    </div>
+                  )}
+
                   {!isQtdValida && totalCabecasAnuncio !== '' && (
                     <p className="text-[11px] text-rose-500 font-semibold">
-                      Quantidade inválida (deve ser entre 1 e {totalCabecasIa}).
+                      Quantidade deve ser maior que 0.
                     </p>
                   )}
                 </div>
 
-                {/* INPUT 2: VALOR TOTAL DO LOTE (R$) */}
+                {/* INPUT 3: VALOR TOTAL DO LOTE (R$) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
                     <DollarSign className="w-3.5 h-3.5 text-slate-400" />
@@ -345,11 +516,6 @@ export function ProducerDashboard() {
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
                     placeholder="Ex: 85000.00"
                   />
-                  {!isValorValido && valorLoteAnuncio !== '' && valorLoteAnuncio !== undefined && (
-                    <p className="text-[11px] text-rose-500 font-semibold">
-                      O valor deve ser maior que R$ 0,00.
-                    </p>
-                  )}
                 </div>
 
               </div>
@@ -395,17 +561,80 @@ export function ProducerDashboard() {
                 'Notificar Consumidores'
               )}
             </button>
-            
-            {!podeNotificar && isConcluido && !notificado && (
-              <p className="text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200 text-center font-medium">
-                Informe a quantidade de gado e o valor total (R$) para habilitar a notificação.
-              </p>
-            )}
           </div>
 
         </div>
 
       </div>
+
+      {/* POP-UP: SELEÇÃO DE GADO DA RESERVA */}
+      {modalReservaAberto && (
+        <div 
+          onClick={() => setModalReservaAberto(false)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200/80 space-y-5 relative"
+          >
+            <button
+              type="button"
+              onClick={() => setModalReservaAberto(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 p-1 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+                <Archive className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Selecionar Gado da Reserva
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Soma o saldo de sobras anteriores ao gado analisado neste vídeo
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-60 overflow-y-auto">
+              {lotesReserva.map((res) => (
+                <div 
+                  key={res.id}
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between hover:border-emerald-400 transition"
+                >
+                  <div>
+                    <span className="text-lg font-black text-slate-900">
+                      +{res.quantidadeCabecas} cabeças
+                    </span>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      Salvo em {res.createdAt}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmarAnexoReserva(res)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs"
+                  >
+                    Somar ao Anúncio
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setModalReservaAberto(false)}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pop-up de Contagem Regressiva */}
       {modalContagemAberta && (

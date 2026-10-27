@@ -14,7 +14,9 @@ import {
   Hash, 
   AlertCircle,
   Tractor,
-  ShoppingBag
+  ShoppingBag,
+  FileText,
+  Upload
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFarm, type AreaUnit } from '../../context/FarmContext';
@@ -42,6 +44,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
   const [capacidadeGado, setCapacidadeGado] = useState<number | ''>('');
   const [areaValue, setAreaValue] = useState<number | ''>('');
   const [areaUnit, setAreaUnit] = useState<AreaUnit>('ha');
+  const [kmlFile, setKmlFile] = useState<File | null>(null);
 
   // Campos de Comprador
   const [empresa, setEmpresa] = useState('');
@@ -68,15 +71,33 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           areaUnit
         };
 
+        // 1. Cria Usuário e Fazenda
         const res = await api.post('/api/usuarios/registrar', payload);
         const userId = res.data?.usuarioId || res.data?.usuario?.id;
+        const realFazendaId = res.data?.fazendaId || res.data?.usuario?.fazendas?.[0]?.id;
 
+        // 2. Se o produtor anexou um arquivo KML, envia imediatamente após a criação da fazenda
+        if (kmlFile && realFazendaId) {
+          try {
+            const formData = new FormData();
+            formData.append('file', kmlFile);
+
+            await api.post(`/api/fazendas/${realFazendaId}/kml`, formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            });
+          } catch (kmlErr) {
+            console.error('Erro ao enviar KML durante o cadastro:', kmlErr);
+            // Prossegue com o fluxo de login de modo que o usuário consiga acessar mesmo se o KML falhar
+          }
+        }
+
+        // 3. Define a sessão do produtor com a fazenda cadastrada
         setUserSession({
           id: userId,
           nome,
           tipo: 'produtor',
           fazenda: {
-            id: res.data?.fazendas?.[0]?.id || res.data?.fazendaId || `farm-${Date.now()}`,
+            id: realFazendaId || `farm-${Date.now()}`,
             nome: nomeFazenda,
             localizacao,
             capacidadeGado: Number(capacidadeGado) || 0,
@@ -338,6 +359,34 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                     </select>
                   </div>
                 </div>
+
+                {/* NOVO CAMPO: UPLOAD DE KML DO TERRENO */}
+                <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-emerald-600" />
+                      Mapa do Terreno (Arquivo KML do CAR) - Opcional
+                    </label>
+                    {kmlFile && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        Anexado
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".kml"
+                      onChange={(e) => setKmlFile(e.target.files?.[0] || null)}
+                      className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Ao anexar o arquivo `.kml`, as demarcações de pastos serão importadas automaticamente durante a criação da conta.
+                  </p>
+                </div>
+
               </div>
             </>
           ) : (

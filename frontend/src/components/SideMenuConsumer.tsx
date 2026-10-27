@@ -6,6 +6,7 @@ import {
   CheckCircle2, 
   HelpCircle,
   User,
+  BarChart2,
   LogOut
 } from 'lucide-react';
 
@@ -109,6 +110,24 @@ export const SideMenuConsumer: React.FC<SideMenuConsumerProps> = ({
                   Reservas de Lotes
                 </button>
               </div>
+            </div>
+
+            {/* ANÁLISE DE MERCADO */}
+            <div>
+              <p className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Análise de Mercado
+              </p>
+              <button
+                onClick={() => onNavigate('analise-fazenda')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                  activeSubSection === 'analise-fazenda'
+                    ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <BarChart2 className={`w-4 h-4 ${activeSubSection === 'analise-fazenda' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                Análise da Fazenda
+              </button>
             </div>
 
             {/* SUPORTE */}

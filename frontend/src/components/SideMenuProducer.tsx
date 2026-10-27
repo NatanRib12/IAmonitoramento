@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   BarChart3, 
   ShoppingBag,
+  History,
   Video, 
   Film, 
   CheckSquare, 
@@ -47,10 +48,10 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
           {/* Navegação */}
           <nav className="p-4 space-y-6 flex-1">
             
-            {/* ANÁLISE DE VENDAS DE LOTES */}
+            {/* ANÁLISE E ANÚNCIO DE LOTES */}
             <div>
               <p className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Análise e Anûncio de Lotes
+                Análise e Anúncio de Lotes
               </p>
               <div className="space-y-1">
                 <button
@@ -65,7 +66,6 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
                   Gráfico de Análise
                 </button>
 
-                {/* NOVA SUBSEÇÃO */}
                 <button
                   onClick={() => onNavigate('lotes-mercado')}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
@@ -76,6 +76,19 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
                 >
                   <ShoppingBag className={`w-4 h-4 ${activeSubSection === 'lotes-mercado' ? 'text-emerald-600' : 'text-slate-400'}`} />
                   Mercado
+                </button>
+
+                {/* SUBSEÇÃO: HISTÓRICO DE LOTES VENDIDOS */}
+                <button
+                  onClick={() => onNavigate('historico-lotes')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                    activeSubSection === 'historico-lotes'
+                      ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <History className={`w-4 h-4 ${activeSubSection === 'historico-lotes' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  Histórico
                 </button>
               </div>
             </div>
@@ -202,3 +215,5 @@ export const SideMenuProducer: React.FC<SideMenuProducerProps> = ({
     </div>
   );
 };
+
+export default SideMenuProducer;

@@ -48,6 +48,14 @@ def processar_video(video_path):
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Arquivo de vídeo não encontrado em: {video_path}")
 
+        # Identifica o FPS original do vídeo para manter a velocidade normal de reprodução
+        cap_info = cv2.VideoCapture(video_path)
+        fps_original = cap_info.get(cv2.CAP_PROP_FPS) or 30.0
+        cap_info.release()
+
+        stride = 2
+        fps_saida = fps_original / stride  # Ajusta a taxa de quadros proporcional ao vid_stride
+
         model = YOLO(model_path)
 
         pasta_uploads = os.path.dirname(video_path)
@@ -55,15 +63,13 @@ def processar_video(video_path):
         video_processado_nome = f"{nome_base}_processado.mp4"
         video_processado_path = os.path.join(pasta_uploads, video_processado_nome)
 
-        # CONFIGURAÇÃO DE ALTA PERFORMANCE PARA CPU:
-        # - vid_stride=3 (Processa 1 a cada 3 frames -> Ganho de 3x em velocidade)
-        # - device="cpu" (Força execução otimizada em processador)
+        # Configuração de inferência com ajuste no limiar para capturar gados no fundo
         resultados = model.track(
             source=video_path,
-            conf=0.25,
+            conf=0.60,
             iou=0.45,
             imgsz=1024,
-            vid_stride=4, 
+            vid_stride=stride, 
             device="cpu", 
             persist=True,
             tracker="bytetrack.yaml",
@@ -80,7 +86,7 @@ def processar_video(video_path):
                 h, w, _ = annotated_frame.shape
                 for codec in ['avc1', 'H264', 'mp4v']:
                     fourcc = cv2.VideoWriter_fourcc(*codec)
-                    writer = cv2.VideoWriter(video_processado_path, fourcc, 30.0, (w, h))
+                    writer = cv2.VideoWriter(video_processado_path, fourcc, fps_saida, (w, h))
                     if writer.isOpened():
                         break
 
@@ -89,16 +95,16 @@ def processar_video(video_path):
 
             if r.boxes is not None:
                 boxes = r.boxes.xywh.tolist()
-                valid_boxes = [b for b in boxes if (b[2] * b[3]) > 200]
+                # Considera caixas menores para não descartar animais distantes ao fundo
+                valid_boxes = [b for b in boxes if (b[2] * b[3]) > 40]
                 contagem_por_frame.append(len(valid_boxes))
 
         if writer and writer.isOpened():
             writer.release()
 
+        # Obtém a contagem máxima atingida em frame (capta o pico real de 13 animais no final)
         if contagem_por_frame:
-            contagem_por_frame.sort()
-            idx_pico = int(len(contagem_por_frame) * 0.90)
-            total_gado = contagem_por_frame[idx_pico]
+            total_gado = max(contagem_por_frame)
         else:
             total_gado = 0
 

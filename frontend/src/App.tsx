@@ -8,6 +8,7 @@ import { FarmProvider, useFarm } from './context/FarmContext';
 // Telas Autenticadas do Produtor
 import { AnalyticsDashboard } from './pages/producer/AnalyticsDashboard';
 import { MarketLotsProducer } from './pages/producer/MarketLotsProducer';
+import { HistoryProducer } from './pages/producer/HistoryProducer';
 import { ProducerDashboard } from './pages/producer/IAtool';
 import { UnprocessedVideo } from './pages/producer/UnprocessedVideo';
 import { ProcessedVideo } from './pages/producer/ProcessedVideo';
@@ -24,6 +25,7 @@ import { AlertsConsumer } from './pages/Consumer/AlertsConsumer';
 import { PreviousPurchases } from './pages/Consumer/PreviousPurchases';
 import { ReservedLots } from './pages/Consumer/ReservedLots';
 import { SupportCenterConsumer } from './pages/Consumer/SupportCenterConsumer';
+import { FarmAnalysisConsumer } from './pages/Consumer/FarmAnalysisConsumer';
 
 // Telas de Autenticação Universais
 import { Login } from './pages/Auth/Login';
@@ -97,6 +99,7 @@ function AppContent() {
           >
             {subSectionProducer === 'grafico-analise' && <AnalyticsDashboard />}
             {subSectionProducer === 'lotes-mercado' && <MarketLotsProducer />}
+            {subSectionProducer === 'historico-lotes' && <HistoryProducer />}
             {subSectionProducer === 'analisar-video' && <ProducerDashboard />}
             {subSectionProducer === 'videos-anteriores' && <UnprocessedVideo />}
             {subSectionProducer === 'videos-com-analise' && <ProcessedVideo />}
@@ -120,6 +123,7 @@ function AppContent() {
           {subSectionConsumer === 'compras-anteriores' && <PreviousPurchases />}
           {subSectionConsumer === 'reservas-lotes' && <ReservedLots />}
           {subSectionConsumer === 'central-suporte' && <SupportCenterConsumer/>}
+          {subSectionConsumer === 'analise-fazenda' && <FarmAnalysisConsumer />}
         </SideMenuConsumer>
       )}
     </>
