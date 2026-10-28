@@ -1,4 +1,5 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { processarChatCopilot } from '../ai/Orchestrator';
 import { PrismaClient } from '@prisma/client';
 import { processarVideoIA } from '../Service';
 import { Resend } from 'resend';
@@ -1160,4 +1161,18 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
     }
   });
 
+  // Nova rota para o Chat Copilot
+  app.post('/api/chat/copilot', async (req: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const body = req.body as any;
+      const resposta = await processarChatCopilot(body);
+      return reply.send({ resposta });
+    } catch (error: any) {
+      app.log.error(error);
+      return reply.status(500).send({ 
+        error: 'Erro interno no processamento do AgroIntelli Copilot',
+        details: error.message 
+      });
+    }
+  });
 }

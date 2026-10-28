@@ -11,7 +11,8 @@ import {
   PieChart as PieIcon,
   Clock,
   CheckCircle2,
-  AlertCircle
+  Box,
+  MessageCircle
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -21,6 +22,7 @@ interface FazendaBusca {
   id: string;
   nome: string;
   localizacao: string;
+  telefone?: string;
 }
 
 interface LoteHistorico {
@@ -30,6 +32,7 @@ interface LoteHistorico {
   status: string;
   createdAt: string;
   updatedAt?: string;
+  telefoneFazendeiro?: string;
 }
 
 export const FarmAnalysisConsumer: React.FC = () => {
@@ -42,15 +45,12 @@ export const FarmAnalysisConsumer: React.FC = () => {
 
   const [echartsLoaded, setEchartsLoaded] = useState(false);
   
-  // Ref para o Gráfico 1 (Linhas Empilhadas)
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<any>(null);
 
-  // Ref para o Gráfico 2 (Rosca / Donut)
   const pieChartRef = useRef<HTMLDivElement>(null);
   const pieChartInstanceRef = useRef<any>(null);
 
-  // Carrega a biblioteca ECharts dinamicamente
   useEffect(() => {
     if (typeof echarts !== 'undefined') {
       setEchartsLoaded(true);
@@ -63,7 +63,6 @@ export const FarmAnalysisConsumer: React.FC = () => {
     document.body.appendChild(script);
   }, []);
 
-  // Autocomplete de fazendas
   useEffect(() => {
     if (!searchTerm.trim()) {
       setSearchResults([]);
@@ -85,36 +84,51 @@ export const FarmAnalysisConsumer: React.FC = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
-  // Carrega análise da fazenda selecionada
   const handleSelectFarm = (fazenda: FazendaBusca) => {
     setSelectedFarm(fazenda);
     setSearchTerm('');
     setSearchResults([]);
     setIsLoadingFarmData(true);
 
-    api.get(`/api/fazendas/${fazenda.id}/analise-fornecedor`)
+    api.get(`/api/fazendas/${fazenda.id}/analise-fornecedor?_t=${Date.now()}`)
       .then((res) => {
         if (res.data?.sucesso) {
-          setLotes(res.data.lotes || []);
+          const lotesBD: any[] = res.data.lotes || [];
+          
+          // Lógica idêntica ao dashboard do produtor: apenas status 'VENDIDO' conta como saída
+          const lotesFormatados: LoteHistorico[] = lotesBD.map((l) => {
+            const quantOriginal = Number(l.quantidadeCabecas || 0);
+            const quantVendida = l.status === 'VENDIDO' ? quantOriginal : Number(l.quantidadeVendida || 0);
+
+            return {
+              id: l.id,
+              quantidadeCabecas: quantOriginal,
+              quantidadeVendida: quantVendida,
+              status: l.status || 'DISPONIVEL',
+              createdAt: l.createdAt || new Date().toISOString(),
+              updatedAt: l.updatedAt || l.createdAt,
+              telefoneFazendeiro: l.telefoneFazendeiro || l.telefone || fazenda.telefone || ''
+            };
+          });
+
+          setLotes(lotesFormatados);
         }
       })
       .catch((err) => console.error('Erro ao carregar dados da fazenda:', err))
       .finally(() => setIsLoadingFarmData(false));
   };
 
-  // Cálculos de Volumetria
   const totalAnunciado = useMemo(() => lotes.reduce((sum, l) => sum + l.quantidadeCabecas, 0), [lotes]);
-  const totalVendido = useMemo(() => lotes.reduce((sum, l) => sum + (l.status === 'VENDIDO' ? l.quantidadeCabecas : l.quantidadeVendida), 0), [lotes]);
-  const totalSobras = useMemo(() => Math.max(0, totalAnunciado - totalVendido), [totalAnunciado, totalVendido]);
+  const totalVendido = useMemo(() => lotes.reduce((sum, l) => sum + l.quantidadeVendida, 0), [lotes]);
+  const gadosRestantes = useMemo(() => Math.max(0, totalAnunciado - totalVendido), [totalAnunciado, totalVendido]);
   
   const taxaLiquidacao = useMemo(() => {
     if (!totalAnunciado) return 0;
     return Math.round((totalVendido / totalAnunciado) * 100);
   }, [totalAnunciado, totalVendido]);
 
-  // Tempo Médio de Giro de Vendas
   const tempoMedioGiroDias = useMemo(() => {
-    const lotesFechados = lotes.filter(l => l.status === 'VENDIDO' || l.quantidadeVendida > 0);
+    const lotesFechados = lotes.filter(l => l.status === 'VENDIDO');
     if (!lotesFechados.length) return 'N/A';
 
     const somaDias = lotesFechados.reduce((acc, l) => {
@@ -128,7 +142,22 @@ export const FarmAnalysisConsumer: React.FC = () => {
     return media < 1 ? '< 1 dia' : `${media.toFixed(1)} dias`;
   }, [lotes]);
 
-  // 1. Renderização do Gráfico Stacked Line / Area (Composição do Fluxo)
+  const handleRedirectWhatsApp = (lote: LoteHistorico) => {
+    const sobra = Math.max(0, lote.quantidadeCabecas - lote.quantidadeVendida);
+    const telefone = lote.telefoneFazendeiro || selectedFarm?.telefone || '';
+    const numLimpo = telefone.replace(/\D/g, '');
+    const mensagem = encodeURIComponent(
+      `Olá! Vi o anúncio da fazenda *${selectedFarm?.nome}* e tenho interesse nas *${sobra} cabeças de gado restantes* deste lote.`
+    );
+    
+    const linkWhatsApp = numLimpo 
+      ? `https://wa.me/55${numLimpo}?text=${mensagem}`
+      : `https://api.whatsapp.com/send?text=${mensagem}`;
+
+    window.open(linkWhatsApp, '_blank');
+  };
+
+  // 1. Gráfico de Linhas Livres (Sem empilhamento stack)
   useEffect(() => {
     if (!echartsLoaded || !chartRef.current || !selectedFarm || !lotes.length) return;
 
@@ -141,13 +170,8 @@ export const FarmAnalysisConsumer: React.FC = () => {
       new Date(l.createdAt).toLocaleDateString('pt-BR', { month: 'short', day: '2-digit' })
     );
 
-    const serieVendidos = ultimosLotes.map((l) => 
-      l.status === 'VENDIDO' ? l.quantidadeCabecas : l.quantidadeVendida
-    );
-
-    const serieSobras = ultimosLotes.map((l) => 
-      Math.max(0, l.quantidadeCabecas - (l.status === 'VENDIDO' ? l.quantidadeCabecas : l.quantidadeVendida))
-    );
+    const serieVendidos = ultimosLotes.map((l) => l.quantidadeVendida);
+    const serieRestantes = ultimosLotes.map((l) => Math.max(0, l.quantidadeCabecas - l.quantidadeVendida));
 
     const option = {
       color: ['#10b981', '#f59e0b'],
@@ -159,7 +183,7 @@ export const FarmAnalysisConsumer: React.FC = () => {
         axisPointer: { type: 'cross', label: { backgroundColor: '#0f172a' } }
       },
       legend: {
-        data: ['Gado Comercializado', 'Sobra Remanescente no Pasto'],
+        data: ['Gado Comercializado', 'Gado Restante no Pasto'],
         top: 0,
         textStyle: { color: '#475569', fontWeight: 'bold', fontSize: 12 }
       },
@@ -176,6 +200,7 @@ export const FarmAnalysisConsumer: React.FC = () => {
       yAxis: [
         {
           type: 'value',
+          min: 0,
           name: 'Cabeças',
           nameTextStyle: { color: '#94a3b8', fontWeight: 'bold' },
           splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
@@ -186,36 +211,34 @@ export const FarmAnalysisConsumer: React.FC = () => {
         {
           name: 'Gado Comercializado',
           type: 'line',
-          stack: 'Total',
           smooth: true,
           lineStyle: { width: 3, color: '#10b981' },
           showSymbol: true,
           symbolSize: 6,
+          itemStyle: { color: '#10b981' },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(16, 185, 129, 0.45)' },
-              { offset: 1, color: 'rgba(16, 185, 129, 0.05)' }
+              { offset: 0, color: 'rgba(16, 185, 129, 0.20)' },
+              { offset: 1, color: 'rgba(16, 185, 129, 0.01)' }
             ])
           },
-          emphasis: { focus: 'series' },
           data: serieVendidos
         },
         {
-          name: 'Sobra Remanescente no Pasto',
+          name: 'Gado Restante no Pasto',
           type: 'line',
-          stack: 'Total',
           smooth: true,
           lineStyle: { width: 3, color: '#f59e0b' },
           showSymbol: true,
           symbolSize: 6,
+          itemStyle: { color: '#f59e0b' },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(245, 158, 11, 0.45)' },
-              { offset: 1, color: 'rgba(245, 158, 11, 0.05)' }
+              { offset: 0, color: 'rgba(245, 158, 11, 0.20)' },
+              { offset: 1, color: 'rgba(245, 158, 11, 0.01)' }
             ])
           },
-          emphasis: { focus: 'series' },
-          data: serieSobras
+          data: serieRestantes
         }
       ]
     };
@@ -223,7 +246,7 @@ export const FarmAnalysisConsumer: React.FC = () => {
     chartInstanceRef.current.setOption(option, true);
   }, [echartsLoaded, selectedFarm, lotes]);
 
-  // 2. Renderização do Gráfico de Rosca (Taxa de Comercialização)
+  // 2. Gráfico de Rosca (Taxa de Comercialização)
   useEffect(() => {
     if (!echartsLoaded || !pieChartRef.current || !selectedFarm) return;
 
@@ -262,16 +285,15 @@ export const FarmAnalysisConsumer: React.FC = () => {
           },
           data: [
             { value: totalVendido, name: 'Saída (Vendidos)', itemStyle: { color: '#059669' } },
-            { value: totalSobras, name: 'Gados Restantes no Pasto', itemStyle: { color: '#e2e8f0' } }
+            { value: gadosRestantes, name: 'Gados Restantes no Pasto', itemStyle: { color: '#e2e8f0' } }
           ]
         }
       ]
     };
 
     pieChartInstanceRef.current.setOption(option, true);
-  }, [echartsLoaded, selectedFarm, totalVendido, totalSobras, taxaLiquidacao]);
+  }, [echartsLoaded, selectedFarm, totalVendido, gadosRestantes, taxaLiquidacao]);
 
-  // Redimensionamento Responsivo das instâncias
   useEffect(() => {
     const handleResize = () => {
       chartInstanceRef.current?.resize();
@@ -290,11 +312,11 @@ export const FarmAnalysisConsumer: React.FC = () => {
           Análise do Fornecedor & Oportunidades de Lotes
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Busque a propriedade para avaliar a velocidade de vendas, histórico de entregas e taxa de comercialização do rebanho.
+          Busque a propriedade para avaliar a velocidade de vendas, histórico de entregas e estoque restante do rebanho.
         </p>
       </div>
 
-      {/* BARRA DE PESQUISA INTELIGENTE */}
+      {/* BARRA DE PESQUISA */}
       <div className="relative max-w-2xl">
         <div className="relative">
           <Search className="w-5 h-5 text-slate-400 absolute left-4 top-3.5" />
@@ -400,27 +422,27 @@ export const FarmAnalysisConsumer: React.FC = () => {
             <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex items-start justify-between">
               <div className="space-y-1">
                 <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block">
-                  SOBRAS REMANESCENTES
+                  GADOS RESTANTES
                 </span>
-                <p className="text-2xl font-black text-amber-600">{totalSobras} cabeças</p>
-                <p className="text-[11px] text-slate-500 font-medium">Disponível no pasto para negociação</p>
+                <p className="text-2xl font-black text-blue-600">{gadosRestantes} cabeças</p>
+                <p className="text-[11px] text-slate-500 font-medium">Restante no pasto para negociação</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <AlertCircle className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <Box className="w-5 h-5" />
               </div>
             </div>
           </div>
 
-          {/* GRÁFICO 1: LINHAS EMPILHADAS (COMPOSIÇÃO DO FLUXO) */}
+          {/* GRÁFICO 1: EVOLUÇÃO DO FLUXO DO REBANHO */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                  Composição do Fluxo de Rebanho (Comercializado vs Sobra)
+                  Composição do Fluxo de Rebanho (Comercializado vs Restante)
                 </h3>
               </div>
-              <span className="text-xs text-slate-400 font-medium">Área empilhada = Total ofertado</span>
+              <span className="text-xs text-slate-400 font-medium">Valores exatos por período</span>
             </div>
 
             <div className="w-full h-[320px] relative pt-2">
@@ -428,7 +450,7 @@ export const FarmAnalysisConsumer: React.FC = () => {
             </div>
           </div>
 
-          {/* GRÁFICO 2: ROSCA / DONUT (TAXA DE COMERCIALIZAÇÃO DO REBANHO) */}
+          {/* GRÁFICO 2: ROSCA (TAXA DE COMERCIALIZAÇÃO DO REBANHO) */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
@@ -461,7 +483,7 @@ export const FarmAnalysisConsumer: React.FC = () => {
             </div>
           </div>
 
-          {/* TABELA DE LOTES E OPORTUNIDADES */}
+          {/* TABELA DE LOTES E BOTÃO DE CONTATO */}
           <div className="space-y-3 pt-4 border-t border-slate-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -485,14 +507,13 @@ export const FarmAnalysisConsumer: React.FC = () => {
                       <th className="py-3 px-4">Data do Anúncio</th>
                       <th className="py-3 px-4 text-right">Ofertado</th>
                       <th className="py-3 px-4 text-right">Comercializado</th>
-                      <th className="py-3 px-4 text-right">Sobra no Pasto</th>
+                      <th className="py-3 px-4 text-right">Gado Restante</th>
                       <th className="py-3 px-4 text-center">Ação Recomendada</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {lotes.map((lote) => {
-                      const vendido = lote.status === 'VENDIDO' ? lote.quantidadeCabecas : lote.quantidadeVendida;
-                      const sobra = Math.max(0, lote.quantidadeCabecas - vendido);
+                      const restante = Math.max(0, lote.quantidadeCabecas - lote.quantidadeVendida);
 
                       return (
                         <tr key={lote.id} className="hover:bg-slate-50/80 transition-colors">
@@ -503,24 +524,25 @@ export const FarmAnalysisConsumer: React.FC = () => {
                             {lote.quantidadeCabecas} cab.
                           </td>
                           <td className="py-3.5 px-4 text-right font-semibold text-emerald-700">
-                            {vendido} cab.
+                            {lote.quantidadeVendida} cab.
                           </td>
                           <td className="py-3.5 px-4 text-right font-extrabold">
                             <span className={`px-2.5 py-1 rounded-lg inline-block ${
-                              sobra > 0 
+                              restante > 0 
                                 ? 'bg-amber-50 text-amber-700 border border-amber-200/80' 
                                 : 'bg-slate-100 text-slate-400'
                             }`}>
-                              {sobra} cab.
+                              {restante} cab.
                             </span>
                           </td>
                           <td className="py-3.5 px-4 text-center">
-                            {sobra > 0 ? (
+                            {restante > 0 ? (
                               <button 
-                                onClick={() => alert(`Solicitação enviada com sucesso! Você registrou interesse para negociar as ${sobra} cabeças remanescentes deste lote.`)}
-                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer transition-colors shadow-2xs"
+                                onClick={() => handleRedirectWhatsApp(lote)}
+                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer transition-colors shadow-2xs inline-flex items-center gap-1.5"
                               >
-                                Solicitar Remanescente
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                Entrar em Contato
                               </button>
                             ) : (
                               <span className="text-slate-400 font-medium">Lote Totalmente Vendido</span>
@@ -541,7 +563,7 @@ export const FarmAnalysisConsumer: React.FC = () => {
           <Building2 className="w-10 h-10 text-slate-400 mx-auto" />
           <p className="text-sm font-bold text-slate-700">Nenhuma propriedade selecionada</p>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Busque o nome da fazenda acima para analisar a taxa de comercialização do fornecedor e as sobras remanescentes.
+            Busque o nome da fazenda acima para analisar a taxa de comercialização do fornecedor e o rebanho disponível.
           </p>
         </div>
       )}

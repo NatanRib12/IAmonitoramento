@@ -27,6 +27,9 @@ import { ReservedLots } from './pages/Consumer/ReservedLots';
 import { SupportCenterConsumer } from './pages/Consumer/SupportCenterConsumer';
 import { FarmAnalysisConsumer } from './pages/Consumer/FarmAnalysisConsumer';
 
+// Widget do Chat
+import AgroIntelliChatWidget from './components/Chat';
+
 // Telas de Autenticação Universais
 import { Login } from './pages/Auth/Login';
 import { Register } from './pages/Auth/Register';
@@ -89,7 +92,7 @@ function AppContent() {
         />
       )}
 
-      {/* ÁREA DO PRODUTOR */}
+            {/* ÁREA DO PRODUTOR */}
       {telaAtual === 'producer_area' && (
         <VideoProcessingProvider>
           <SideMenuProducer
@@ -106,25 +109,41 @@ function AppContent() {
             {subSectionProducer === 'mudar-fazenda' && <FarmManagement />}
             {subSectionProducer === 'central-suporte' && <SupportCenter />}
           </SideMenuProducer>
+
+          {/* CHAT FLUTUANTE DO PRODUTOR */}
+          <AgroIntelliChatWidget
+            perfil="PRODUTOR"
+            telaAtual={subSectionProducer}
+            entityId={userSession?.id}
+          />
         </VideoProcessingProvider>
       )}
 
       {/* ÁREA DO COMPRADOR */}
       {telaAtual === 'consumer_area' && (
-        <SideMenuConsumer
-          activeSubSection={subSectionConsumer}
-          onNavigate={(subSection) => setSubSectionConsumer(subSection)}
-          userName={userSession?.nome || 'Comprador'}
-          companyName={userSession?.empresa || 'Frigorífico Parceiro'}
-          onLogout={handleLogout}
-        >
-          {subSectionConsumer === 'lotes-disponiveis' && <ConsumidorDashboard />}
-          {subSectionConsumer === 'radar-alertas' && <AlertsConsumer />}
-          {subSectionConsumer === 'compras-anteriores' && <PreviousPurchases />}
-          {subSectionConsumer === 'reservas-lotes' && <ReservedLots />}
-          {subSectionConsumer === 'central-suporte' && <SupportCenterConsumer/>}
-          {subSectionConsumer === 'analise-fazenda' && <FarmAnalysisConsumer />}
-        </SideMenuConsumer>
+        <>
+          <SideMenuConsumer
+            activeSubSection={subSectionConsumer}
+            onNavigate={(subSection) => setSubSectionConsumer(subSection)}
+            userName={userSession?.nome || 'Comprador'}
+            companyName={userSession?.empresa || 'Frigorífico Parceiro'}
+            onLogout={handleLogout}
+          >
+            {subSectionConsumer === 'lotes-disponiveis' && <ConsumidorDashboard />}
+            {subSectionConsumer === 'radar-alertas' && <AlertsConsumer />}
+            {subSectionConsumer === 'compras-anteriores' && <PreviousPurchases />}
+            {subSectionConsumer === 'reservas-lotes' && <ReservedLots />}
+            {subSectionConsumer === 'central-suporte' && <SupportCenterConsumer />}
+            {subSectionConsumer === 'analise-fazenda' && <FarmAnalysisConsumer />}
+          </SideMenuConsumer>
+
+          {/* CHAT FLUTUANTE DO COMPRADOR */}
+          <AgroIntelliChatWidget
+            perfil="CONSUMIDOR"
+            telaAtual={subSectionConsumer}
+            entityId={userSession?.id}
+          />
+        </>
       )}
     </>
   );

@@ -77,7 +77,17 @@ export const MarketLotsProducer: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await api.get(`/api/videos/minha-fazenda?fazendaId=${activeFarm.id}`);
+      // Adicionado cache-buster (_t=timestamp) e cabeçalho Cache-Control para forçar atualização no Prisma
+      const res = await api.get(
+        `/api/videos/minha-fazenda?fazendaId=${activeFarm.id}&_t=${Date.now()}`,
+        {
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        }
+      );
+
       if (res.data?.lotes) {
         const lotesMapeados: MarketLotItem[] = res.data.lotes
           .filter((l: any) => 
