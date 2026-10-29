@@ -1,6 +1,6 @@
 // src/components/Chat.tsx
-import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, Loader2, Sparkles } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MessageSquare, X, Send, Bot, Loader2, Sparkles, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatMessage {
@@ -12,58 +12,125 @@ interface AgroIntelliChatWidgetProps {
   entityId?: string;
   perfil: 'PRODUTOR' | 'CONSUMIDOR';
   telaAtual: string;
+  entidadeAtiva?: { nome?: string; id?: string; tipo?: string };
 }
 
+const TAMANHO_PADRAO = { width: 480, height: 620 };
+
 const SUGESTOES_POR_TELA: Record<string, string[]> = {
-  // Produtor
   'grafico-analise': [
-    'Qual foi o faturamento total deste ano?',
+    'Qual foi o faturamento total em Outubro de 2026?',
     'Quantas cabeças restam no pasto?',
-    'Resumo de vendas de Outubro'
+    'Qual a taxa de comercialização atual?'
   ],
   'lotes-mercado': [
     'Quais lotes tenho disponíveis no mercado?',
-    'Como crio um novo anúncio de lote?'
+    'Como funciona a central de interesses e propostas?'
   ],
   'historico-lotes': [
     'Qual o lote com maior valor de venda?',
-    'Resumo de vendas concluídas'
+    'Resumo das transações concluídas'
   ],
   'analisar-video': [
-    'Como funciona a contagem por IA?',
-    'Quais formatos de vídeo são aceitos?'
+    'Como funciona a contagem por IA e drone?',
+    'Quais modelos de visão computacional são usados?'
   ],
   'mudar-fazenda': [
-    'Qual a capacidade total dos meus pastos?',
-    'Resumo da fazenda selecionada'
+    'Como funciona o mapeamento via KML/CAR?',
+    'Qual a capacidade de suporte dos meus pastos?'
   ],
-  // Consumidor / Comprador
   'lotes-disponiveis': [
-    'Quais lotes de gado estão disponíveis no mercado?',
+    'Quais lotes auditados por visão computacional estão disponíveis?',
     'Filtrar lotes com mais de 50 cabeças'
   ],
   'radar-alertas': [
-    'Quais são os meus alertas de compra ativos?',
-    'Como criar um alerta para a região de Barretos?'
+    'Como funciona o Radar de Alertas do comprador?',
+    'Quais são os meus alertas ativos?'
   ],
   'compras-anteriores': [
     'Resumo das minhas últimas aquisições',
     'Qual foi meu maior volume de compra?'
+  ],
+  'analise-fazenda': [
+    'Qual o tempo médio de giro e velocidade dessa fazenda?',
+    'Qual o estoque de gado restante no pasto aqui?'
   ]
 };
 
-export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: AgroIntelliChatWidgetProps) {
+export default function AgroIntelliChatWidget({
+  entityId,
+  perfil,
+  telaAtual,
+  entidadeAtiva
+}: AgroIntelliChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // Estado para redimensionamento dinâmico
+  const [size, setSize] = useState(TAMANHO_PADRAO);
+  const [isResizing, setIsResizing] = useState(false);
+  
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
+
+  // Reseta o tamanho para o padrão sempre que o chat for fechado
+  useEffect(() => {
+    if (!isOpen) {
+      setSize(TAMANHO_PADRAO);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
       chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isOpen]);
+
+  // Lógica de Redimensionamento via Arraste (Canto Superior Esquerdo)
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: size.width,
+      startH: size.height
+    };
+  }, [size]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !resizeRef.current) return;
+      const deltaX = resizeRef.current.startX - e.clientX;
+      const deltaY = resizeRef.current.startY - e.clientY;
+
+      const newWidth = Math.max(340, Math.min(950, resizeRef.current.startW + deltaX));
+      const newHeight = Math.max(450, Math.min(900, resizeRef.current.startH + deltaY));
+
+      setSize({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      resizeRef.current = null;
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  const handleResetSize = () => {
+    setSize(TAMANHO_PADRAO);
+  };
 
   const handleSendMessage = async (e?: React.FormEvent, customText?: string) => {
     if (e) e.preventDefault();
@@ -85,7 +152,8 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
           contexto: {
             perfil,
             telaAtual,
-            entityId
+            entityId,
+            entidadeAtiva
           },
           historicoMensagens: updatedMessages
         })
@@ -113,18 +181,28 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
   };
 
   const sugestoes = SUGESTOES_POR_TELA[telaAtual] || [
-    'Como posso utilizar o AgroIntelli Copilot?',
-    'Quais informações posso consultar nesta tela?'
+    'O que é a plataforma AgroIntelli?',
+    'Como posso utilizar o Copilot nesta tela?'
   ];
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end font-sans">
       {isOpen && (
-        /* Janela Expandida: w-[440px] sm:w-[500px] h-[620px] */
-        <div className="mb-4 h-[620px] w-[440px] sm:w-[500px] rounded-2xl bg-white shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300">
-          
+        <div
+          style={{ width: `${size.width}px`, height: `${size.height}px` }}
+          className="mb-4 rounded-2xl bg-white shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-75 relative select-none"
+        >
+          {/* ALÇA DE REDIMENSIONAMENTO (Canto Superior Esquerdo) */}
+          <div
+            onMouseDown={startResizing}
+            title="Arraste para redimensionar o chat"
+            className="absolute top-0 left-0 w-5 h-5 cursor-nwse-resize z-30 group flex items-center justify-center"
+          >
+            <div className="w-2 h-2 border-t-2 border-l-2 border-slate-400 group-hover:border-emerald-400 transition-colors" />
+          </div>
+
           {/* Cabeçalho */}
-          <div className="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800">
+          <div className="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800 shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-emerald-500 rounded-xl text-slate-950 font-bold">
                 <Bot size={20} />
@@ -136,12 +214,25 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
                 </span>
               </div>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
+
+            <div className="flex items-center gap-1">
+              {/* BOTÃO DE RESETAR TAMANHO */}
+              <button
+                onClick={handleResetSize}
+                title="Restaurar tamanho padrão"
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <RotateCcw size={16} />
+              </button>
+
+              {/* BOTÃO DE FECHAR */}
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Histórico de Mensagens */}
@@ -156,18 +247,17 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
                 </h4>
                 <p className="text-xs text-slate-500 leading-relaxed mb-4">
                   {perfil === 'PRODUTOR'
-                    ? 'Consulte dados da sua fazenda, vendas de lotes, pastos e contagens por drone.'
-                    : 'Consulte lotes disponíveis para compra no mercado, alertas do radar e histórico de aquisições.'}
+                    ? 'Tire dúvidas sobre a AgroIntelli, auditoria por drones, vendas de lotes e pastos.'
+                    : 'Tire dúvidas sobre a vitrine de lotes, radar de alertas e análise de fornecedores.'}
                 </p>
 
-                {/* Chips de Sugestões Rápidas */}
                 <div className="flex flex-col gap-1.5 w-full">
                   {sugestoes.map((sugestao, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => handleSendMessage(undefined, sugestao)}
-                      className="text-xs text-left bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 px-3 py-2 rounded-xl transition-all flex items-center gap-2 shadow-2xs group"
+                      className="text-xs text-left bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 px-3 py-2 rounded-xl transition-all flex items-center gap-2 shadow-2xs group cursor-pointer"
                     >
                       <Sparkles size={14} className="text-emerald-500 group-hover:scale-110 transition-transform shrink-0" />
                       <span>{sugestao}</span>
@@ -180,21 +270,19 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                     msg.role === 'user'
                       ? 'bg-emerald-600 text-white rounded-br-xs shadow-sm'
                       : 'bg-white border border-slate-200 text-slate-800 rounded-bl-xs shadow-2xs'
                   }`}
                 >
-                   {msg.role === 'assistant' ? (
-                    <div className="prose prose-sm max-w-none text-slate-800 prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5">
-                        <ReactMarkdown>
-                        {msg.content}
-                        </ReactMarkdown>
+                  {msg.role === 'assistant' ? (
+                    <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed overflow-x-auto">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
-                    ) : (
+                  ) : (
                     msg.content
-                    )}
+                  )}
                 </div>
               </div>
             ))}
@@ -203,26 +291,26 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
               <div className="flex justify-start">
                 <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-xs px-4 py-3 shadow-2xs flex items-center gap-2 text-slate-500 text-xs">
                   <Loader2 size={14} className="animate-spin text-emerald-600" />
-                  <span>Consultando informações da plataforma...</span>
+                  <span>Consultando inteligência da plataforma...</span>
                 </div>
               </div>
             )}
             <div ref={chatBottomRef} />
           </div>
 
-          {/* Campo de Entrada de Texto */}
-          <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-slate-100 flex gap-2">
+          {/* Input de Envio */}
+          <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-slate-100 flex gap-2 shrink-0">
             <input
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Digite a sua mensagem..."
+              placeholder="Digite sua dúvida sobre a plataforma..."
               className="flex-1 text-sm bg-slate-100 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/50 focus:bg-white transition-all text-slate-800 placeholder:text-slate-400"
             />
             <button
               type="submit"
               disabled={loading || !inputMessage.trim()}
-              className="bg-emerald-600 text-white p-2.5 rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-2xs"
+              className="bg-emerald-600 text-white p-2.5 rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-2xs cursor-pointer"
             >
               <Send size={18} />
             </button>
@@ -233,7 +321,7 @@ export default function AgroIntelliChatWidget({ entityId, perfil, telaAtual }: A
       {/* Botão Flutuante */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 hover:scale-105 active:scale-95 transition-all flex items-center justify-center"
+        className="h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer"
       >
         {isOpen ? <X size={24} /> : <MessageSquare size={24} />}
       </button>
