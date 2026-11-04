@@ -74,6 +74,194 @@ export async function routes(app: FastifyInstance) {
     }
   });
 
+  // ROTA: Buscar Vídeos e Lotes da Fazenda (Dashboard + Galerias)
+  app.get('/api/videos/minha-fazenda', async (request, reply) => {
+    const { fazendaId } = request.query as { fazendaId?: string };
+
+    if (!fazendaId) {
+      return reply.status(400).send({ erro: 'O parâmetro fazendaId é obrigatório.' });
+    }
+
+    try {
+      const lotes = await prisma.lote.findMany({
+        where: { fazendaId },
+        include: {
+          fazenda: {
+            include: {
+              usuario: {
+                select: { nome: true, telefone: true, email: true }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      return reply.send({
+        sucesso: true,
+        lotes
+      });
+    } catch (error) {
+      console.error('Erro ao buscar vídeos/lotes da fazenda:', error);
+      return reply.status(500).send({ erro: 'Falha ao buscar vídeos da fazenda.' });
+    }
+  });
+
+  // ROTA: Criar Novo Lote Lançado ao Mercado
+  app.post('/api/lotes', async (request, reply) => {
+    const { 
+      fazendaId, 
+      pastoId, 
+      quantidadeCabecas, 
+      valorTotal, 
+      status, 
+      consumerPhone 
+    } = request.body as any;
+
+    if (!fazendaId || !quantidadeCabecas) {
+      return reply.status(400).send({ erro: 'ID da fazenda e quantidade de cabeças são obrigatórios.' });
+    }
+
+    try {
+      let consumerPhoneData = consumerPhone || '';
+      if (pastoId) {
+        try {
+          const parsed = typeof consumerPhone === 'string' && consumerPhone.startsWith('{')
+            ? JSON.parse(consumerPhone)
+            : { phone: consumerPhone || '' };
+          parsed.pastoId = pastoId;
+          consumerPhoneData = JSON.stringify(parsed);
+        } catch (e) {
+          consumerPhoneData = JSON.stringify({ pastoId, phone: consumerPhone || '' });
+        }
+      }
+
+      const novoLote = await prisma.lote.create({
+        data: {
+          fazendaId,
+          quantidadeCabecas: Number(quantidadeCabecas),
+          valorTotal: Number(valorTotal) || 0,
+          status: status || 'DISPONIVEL',
+          consumerPhone: consumerPhoneData
+        }
+      });
+
+      return reply.status(201).send({
+        sucesso: true,
+        mensagem: 'Lote lançado no mercado e registrado no dashboard!',
+        lote: novoLote
+      });
+    } catch (error) {
+      console.error('Erro ao criar lote:', error);
+      return reply.status(500).send({ erro: 'Falha ao salvar lote no banco de dados.' });
+    }
+  });
+
+  // ROTA: Registrar Usuário Produtor (e criar sua primeira Fazenda)
+  app.post('/api/usuarios/registrar', async (request, reply) => {
+    const {
+      nome,
+      email,
+      idade,
+      senha,
+      nomeFazenda,
+      localizacao,
+      capacidadeGado,
+      areaValue,
+      areaUnit
+    } = request.body as any;
+
+    if (!nome || !email || !senha || !nomeFazenda) {
+      return reply.status(400).send({ 
+        erro: 'Nome, e-mail, senha e nome da fazenda são obrigatórios.' 
+      });
+    }
+
+    try {
+      const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
+      if (usuarioExistente) {
+        return reply.status(400).send({ erro: 'Este e-mail de produtor já está cadastrado.' });
+      }
+
+      const resultado = await prisma.$transaction(async (tx) => {
+        const novoUsuario = await tx.usuario.create({
+          data: {
+            nome,
+            email,
+            idade: Number(idade) || 18,
+            senhaHash: senha,
+          }
+        });
+
+        const novaFazenda = await tx.fazenda.create({
+          data: {
+            nome: nomeFazenda,
+            localizacao: localizacao || 'Não informada',
+            areaValue: Number(areaValue) || 0,
+            areaUnit: areaUnit || 'ha',
+            cattleCapacity: Number(capacidadeGado) || 0,
+            usuarioId: novoUsuario.id
+          }
+        });
+
+        return { usuario: novoUsuario, fazenda: novaFazenda };
+      });
+
+      return reply.status(201).send({
+        sucesso: true,
+        mensagem: 'Produtor e propriedade cadastrados com sucesso!',
+        usuarioId: resultado.usuario.id,
+        fazendaId: resultado.fazenda.id,
+        usuario: {
+          id: resultado.usuario.id,
+          nome: resultado.usuario.nome,
+          email: resultado.usuario.email,
+          fazenda: resultado.fazenda
+        }
+      });
+
+    } catch (error) {
+      console.error('Erro no registro do produtor:', error);
+      return reply.status(500).send({ erro: 'Erro interno ao cadastrar produtor e fazenda.' });
+    }
+  });
+
+  // ROTA: Login de Usuário Produtor
+  app.post('/api/usuarios/login', async (request, reply) => {
+    const { email, senha } = request.body as any;
+
+    if (!email || !senha) {
+      return reply.status(400).send({ erro: 'E-mail e senha são obrigatórios.' });
+    }
+
+    try {
+      const usuario = await prisma.usuario.findUnique({
+        where: { email },
+        include: { fazendas: true }
+      });
+
+      if (!usuario || usuario.senhaHash !== senha) {
+        return reply.status(401).send({ erro: 'Credenciais inválidas.' });
+      }
+
+      return reply.send({
+        sucesso: true,
+        mensagem: 'Login efetuado com sucesso!',
+        usuario: {
+          id: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          idade: usuario.idade,
+          fazendas: usuario.fazendas,
+          fazenda: usuario.fazendas[0] || null
+        }
+      });
+    } catch (error) {
+      console.error('Erro no login do produtor:', error);
+      return reply.status(500).send({ erro: 'Erro interno ao autenticar produtor.' });
+    }
+  });
+
   // ROTA: Buscar todas as Fazendas de um Usuário
   app.get('/api/fazendas/usuario/:usuarioId', async (request, reply) => {
     const { usuarioId } = request.params as { usuarioId: string };
@@ -103,6 +291,53 @@ export async function routes(app: FastifyInstance) {
     } catch (error) {
       console.error('Erro ao buscar fazendas do usuário:', error);
       return reply.status(500).send({ erro: 'Falha ao buscar lista de fazendas.' });
+    }
+  });
+
+  // ROTA: Listar Fazendas para o Mapa de Fazendas Próximas
+  app.get('/api/fazendas/mapa', async (request, reply) => {
+    try {
+      const fazendas = await prisma.fazenda.findMany({
+        include: {
+          usuario: {
+            select: { nome: true, telefone: true, email: true }
+          },
+          lotes: {
+            where: { status: 'DISPONIVEL' },
+            select: { quantidadeCabecas: true }
+          }
+        }
+      });
+
+      const fazendasFormatadas = fazendas.map((f) => {
+        const totalGadoDisponivel = f.lotes.reduce(
+          (acc, lote) => acc + (lote.quantidadeCabecas || 0), 0
+        );
+
+        return {
+          id: f.id,
+          nome: f.nome,
+          localizacao: f.localizacao,
+          areaValue: f.areaValue,
+          areaUnit: f.areaUnit,
+          capacidadeGado: f.cattleCapacity,
+          totalGadoDisponivel,
+          geojson: f.geojson,
+          proprietario: {
+            nome: f.usuario?.nome || 'Produtor Rural',
+            telefone: f.usuario?.telefone || '(16) 99876-5432',
+            email: f.usuario?.email || ''
+          }
+        };
+      });
+
+      return reply.send({
+        sucesso: true,
+        fazendas: fazendasFormatadas
+      });
+    } catch (error) {
+      console.error('Erro ao buscar fazendas para o mapa:', error);
+      return reply.status(500).send({ erro: 'Falha ao carregar fazendas no mapa.' });
     }
   });
 
@@ -210,404 +445,124 @@ export async function routes(app: FastifyInstance) {
     }
   });
 
-  // ROTA: Criar Pasto
-  app.post('/api/fazendas/:fazendaId/pastos', async (request, reply) => {
-    const { fazendaId } = request.params as { fazendaId: string };
-    const { nome, geojson } = request.body as { nome: string; geojson?: any };
+  // ==========================================
+  // ROTAS DO MÓDULO DE PASTOS
+  // ==========================================
 
-    if (!nome || !nome.trim()) {
-      return reply.status(400).send({ erro: 'O nome do pasto é obrigatório.' });
-    }
-
-    try {
-      const novoPasto = await prisma.pasto.create({
-        data: {
-          nome: nome.trim(),
-          geojson: geojson ? (typeof geojson === 'string' ? geojson : JSON.stringify(geojson)) : null,
-          fazendaId: fazendaId
-        }
-      });
-
-      return reply.status(201).send({
-        sucesso: true,
-        mensagem: 'Pasto/Piquete cadastrado com sucesso!',
-        pasto: novoPasto
-      });
-    } catch (error) {
-      console.error('Erro ao criar pasto:', error);
-      return reply.status(500).send({ erro: 'Falha ao cadastrar o pasto.' });
-    }
-  });
-
-  // ROTA: Listar Pastos de uma Fazenda
+  // ROTA: Buscar Pastos de uma Fazenda
   app.get('/api/fazendas/:fazendaId/pastos', async (request, reply) => {
     const { fazendaId } = request.params as { fazendaId: string };
 
     try {
       const pastos = await prisma.pasto.findMany({
         where: { fazendaId },
-        orderBy: { nome: 'asc' }
+        orderBy: { createdAt: 'asc' }
       });
 
-      return reply.send({ sucesso: true, pastos });
+      return reply.send({
+        sucesso: true,
+        pastos
+      });
     } catch (error) {
       console.error('Erro ao buscar pastos:', error);
-      return reply.status(500).send({ erro: 'Falha ao buscar lista de pastos.' });
+      return reply.status(500).send({ erro: 'Falha ao buscar pastos da fazenda.' });
     }
   });
 
-  app.put('/api/pastos/:id', async (request, reply) => {
-    const { id } = request.params as { id: string };
+  // ROTA: Cadastrar Pasto em uma Fazenda
+  app.post('/api/fazendas/:fazendaId/pastos', async (request, reply) => {
+    const { fazendaId } = request.params as { fazendaId: string };
+    const { nome, geojson } = request.body as { nome: string; geojson: any };
+
+    if (!nome) {
+      return reply.status(400).send({ erro: 'Nome do pasto é obrigatório.' });
+    }
+
+    try {
+      const novoPasto = await prisma.pasto.create({
+        data: {
+          nome,
+          fazendaId,
+          geojson: geojson ? (typeof geojson === 'string' ? geojson : JSON.stringify(geojson)) : null
+        }
+      });
+
+      return reply.status(201).send({
+        sucesso: true,
+        mensagem: 'Pasto cadastrado com sucesso!',
+        pasto: novoPasto
+      });
+    } catch (error) {
+      console.error('Erro ao cadastrar pasto:', error);
+      return reply.status(500).send({ erro: 'Falha ao salvar pasto no banco de dados.' });
+    }
+  });
+
+  // ROTA: Renomear Pasto
+  app.put('/api/pastos/:pastoId', async (request, reply) => {
+    const { pastoId } = request.params as { pastoId: string };
     const { nome } = request.body as { nome: string };
+
+    if (!nome) {
+      return reply.status(400).send({ erro: 'Novo nome do pasto é obrigatório.' });
+    }
 
     try {
       const pastoAtualizado = await prisma.pasto.update({
-        where: { id },
+        where: { id: pastoId },
         data: { nome }
       });
 
-      return reply.send({ sucesso: true, pasto: pastoAtualizado });
+      return reply.send({
+        sucesso: true,
+        mensagem: 'Pasto renomeado com sucesso!',
+        pasto: pastoAtualizado
+      });
     } catch (error) {
-      return reply.status(500).send({ erro: 'Falha ao atualizar o nome do pasto.' });
+      console.error('Erro ao renomear pasto:', error);
+      return reply.status(500).send({ erro: 'Falha ao renomear pasto.' });
     }
   });
 
-  app.delete('/api/pastos/:id', async (request, reply) => {
-    const { id } = request.params as { id: string };
+  // ROTA: Deletar um Pasto Específico
+  app.delete('/api/pastos/:pastoId', async (request, reply) => {
+    const { pastoId } = request.params as { pastoId: string };
 
     try {
-      await prisma.pasto.delete({ where: { id } });
-      return reply.send({ sucesso: true, mensagem: 'Demarcação removida com sucesso.' });
+      await prisma.pasto.delete({ where: { id: pastoId } });
+      return reply.send({
+        sucesso: true,
+        mensagem: 'Pasto removido com sucesso!'
+      });
     } catch (error) {
       console.error('Erro ao deletar pasto:', error);
       return reply.status(500).send({ erro: 'Falha ao deletar pasto.' });
     }
   });
 
+  // ROTA: Limpar Todos os Pastos de uma Fazenda
   app.delete('/api/fazendas/:fazendaId/pastos', async (request, reply) => {
     const { fazendaId } = request.params as { fazendaId: string };
 
     try {
-      await prisma.pasto.deleteMany({
-        where: { fazendaId }
-      });
-
+      await prisma.pasto.deleteMany({ where: { fazendaId } });
       return reply.send({
         sucesso: true,
-        mensagem: 'Todos os pastos acumulados foram removidos com sucesso!'
+        mensagem: 'Todos os pastos da fazenda foram removidos com sucesso.'
       });
     } catch (error) {
-      console.error('Erro ao limpar pastos:', error);
+      console.error('Erro ao limpar pastos da fazenda:', error);
       return reply.status(500).send({ erro: 'Falha ao limpar pastos da fazenda.' });
     }
   });
 
-  // ROTA: Salvar Vídeo no Banco
-  app.post('/api/videos/salvar-galeria', async (request, reply) => {
-    const { 
-      fazendaId, 
-      pastoId,
-      quantidadeCabecas, 
-      valorTotal, 
-      videoOriginalUrl, 
-      videoProcessadoUrl, 
-      status 
-    } = request.body as any;
+  // ==========================================
+  // ROTAS DE COMPRADOR / CONSUMIDOR E DEMAIS
+  // ==========================================
 
-    if (!fazendaId) {
-      return reply.status(400).send({ erro: 'O ID da fazenda é obrigatório.' });
-    }
-
-    try {
-      const novoLote = await prisma.lote.create({
-        data: {
-          quantidadeCabecas: Number(quantidadeCabecas) || 0,
-          valorTotal: Number(valorTotal) || 0,
-          videoOriginalUrl: videoOriginalUrl || '',
-          videoProcessadoUrl: videoProcessadoUrl || '',
-          status: status || 'RASCUNHO',
-          fazendaId: fazendaId,
-          pastoId: pastoId || null
-        }
-      });
-
-      return reply.status(201).send({
-        sucesso: true,
-        mensagem: 'Vídeo armazenado no Banco de Dados com sucesso!',
-        lote: novoLote
-      });
-    } catch (error) {
-      console.error('Erro ao salvar vídeo no Banco de Dados:', error);
-      return reply.status(500).send({ erro: 'Erro interno ao salvar vídeo no banco de dados.' });
-    }
-  });
-
-  app.delete('/api/videos/:id', async (request, reply) => {
-    const { id } = request.params as { id: string };
-
-    if (!id) {
-      return reply.status(400).send({ erro: 'O ID do lote é obrigatório.' });
-    }
-
-    try {
-      await prisma.lote.delete({ where: { id } });
-      return reply.send({ sucesso: true, mensagem: 'Vídeo excluído permanentemente.' });
-    } catch (error) {
-      console.error('Erro ao deletar vídeo:', error);
-      return reply.status(500).send({ erro: 'Falha ao deletar vídeo do banco de dados.' });
-    }
-  });
-
-app.get('/api/videos/minha-fazenda', async (request, reply) => {
-    const { fazendaId } = request.query as { fazendaId?: string };
-
-    if (!fazendaId) {
-      return reply.status(400).send({ erro: 'ID da fazenda é necessário.' });
-    }
-
-    try {
-      const lotes = await prisma.lote.findMany({
-        where: { fazendaId },
-        select: {
-          id: true,
-          quantidadeCabecas: true,
-          valorTotal: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-          fazendaId: true,
-          pastoId: true,
-          consumerId: true,
-          consumerName: true,
-          consumerCompany: true,
-          consumerPhone: true
-          // videoOriginalUrl e videoProcessadoUrl omitidos na listagem para não estourar o buffer N-API do Prisma
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-
-      return reply.send({ sucesso: true, lotes });
-    } catch (error) {
-      console.error('Erro ao buscar vídeos:', error);
-      return reply.status(500).send({ erro: 'Falha ao buscar biblioteca de vídeos.' });
-    }
-  });
-
-  // ROTA: Publicar Lote (Sem erro no include do AlertaRadar)
-  app.post('/api/lotes/publicar', async (request, reply) => {
-    const { loteId, quantidadeCabecas, valorTotal, videoProcessadoUrl, fazendaId } = request.body as any;
-
-    try {
-      let lotePublicado: any = null;
-
-      if (loteId) {
-        lotePublicado = await prisma.lote.update({
-          where: { id: loteId },
-          data: {
-            status: 'DISPONIVEL',
-            quantidadeCabecas: quantidadeCabecas ? Number(quantidadeCabecas) : undefined,
-            valorTotal: valorTotal !== undefined && valorTotal !== null ? Number(valorTotal) : undefined
-          },
-          include: {
-            fazenda: {
-              include: {
-                usuario: true
-              }
-            }
-          }
-        });
-      } else if (fazendaId) {
-        lotePublicado = await prisma.lote.create({
-          data: {
-            quantidadeCabecas: Number(quantidadeCabecas) || 0,
-            valorTotal: valorTotal ? Number(valorTotal) : 0,
-            videoOriginalUrl: videoProcessadoUrl || '',
-            videoProcessadoUrl: videoProcessadoUrl || '',
-            status: 'DISPONIVEL',
-            fazendaId: fazendaId
-          },
-          include: {
-            fazenda: {
-              include: {
-                usuario: true
-              }
-            }
-          }
-        });
-      } else {
-        return reply.status(400).send({ erro: 'ID da fazenda ou do lote não informado.' });
-      }
-
-      const qtdCabecas = lotePublicado.quantidadeCabecas || 0;
-      const valorFormatado = lotePublicado.valorTotal 
-        ? Number(lotePublicado.valorTotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-        : 'A combinar';
-
-      const minQtd = Math.max(1, qtdCabecas - 10);
-      const maxQtd = qtdCabecas + 10;
-
-      try {
-        // CORRIGIDO: Removido include de usuario inexistente no AlertaRadar
-        const alertasCompativeis = await (prisma as any).alertaRadar.findMany({
-          where: {
-            quantidadeDesejada: {
-              gte: minQtd,
-              lte: maxQtd
-            }
-          },
-          include: {
-            consumidor: true
-          }
-        });
-
-        for (const alerta of alertasCompativeis) {
-          const destinatarioEmail = alerta.consumidor?.email;
-          if (!destinatarioEmail) continue;
-
-          if (
-            alerta.regiao &&
-            lotePublicado.fazenda?.localizacao &&
-            !lotePublicado.fazenda.localizacao.toLowerCase().includes(alerta.regiao.toLowerCase())
-          ) {
-            continue;
-          }
-
-          await resend.emails.send({
-            from: 'AgroIntelli Radar <notificacoes@agrointelli.com>',
-            to: [destinatarioEmail],
-            subject: `🎯 Novo Lote Encontrado: ${qtdCabecas} gados em ${lotePublicado.fazenda?.nome || 'Fazenda'}`,
-            html: `
-              <div style="font-family: sans-serif; color: #334155; padding: 20px;">
-                <h2 style="color: #059669;">Novo Lote Auditado Encontrado no Radar AgroIntelli!</h2>
-                <p>Olá! Um novo lote foi publicado no mercado e atende aos critérios do seu alerta de interesse.</p>
-                
-                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin: 15px 0;">
-                  <p style="margin: 4px 0;"><strong>Fazenda:</strong> ${lotePublicado.fazenda?.nome || 'Propriedade Rural'}</p>
-                  <p style="margin: 4px 0;"><strong>Localização:</strong> ${lotePublicado.fazenda?.localizacao || 'Não informada'}</p>
-                  <p style="margin: 4px 0;"><strong>Volume Disponível:</strong> ${qtdCabecas} cabeças</p>
-                  <p style="margin: 4px 0;"><strong>Valor do Lote:</strong> ${valorFormatado}</p>
-                  <p style="margin: 4px 0;"><strong>Vendedor/Produtor:</strong> ${lotePublicado.fazenda?.usuario?.nome || 'Produtor'}</p>
-                </div>
-
-                <p>Acesse o painel do consumidor na plataforma AgroIntelli para iniciar a negociação via WhatsApp!</p>
-              </div>
-            `
-          });
-        }
-      } catch (errEmail) {
-        console.error('Erro ao processar notificações do Resend:', errEmail);
-      }
-
-      return reply.send({
-        sucesso: true,
-        mensagem: 'Lote disponibilizado para o mercado!',
-        lote: lotePublicado
-      });
-    } catch (error) {
-      console.error('Erro ao publicar lote:', error);
-      return reply.status(500).send({ erro: 'Falha ao publicar lote no mercado.' });
-    }
-  });
-
-  app.post('/api/usuarios/login', async (request, reply) => {
-    const { email, senha } = request.body as any;
-
-    if (!email || !senha) {
-      return reply.status(400).send({ erro: 'E-mail e senha são obrigatórios.' });
-    }
-
-    try {
-      const usuario = await prisma.usuario.findUnique({
-        where: { email }
-      });
-
-      if (!usuario || usuario.senhaHash !== senha) {
-        return reply.status(401).send({ erro: 'Credenciais inválidas.' });
-      }
-
-      const fazendas = await prisma.fazenda.findMany({
-        where: { usuarioId: usuario.id }
-      });
-
-      return reply.send({
-        sucesso: true,
-        mensagem: 'Login efetuado com sucesso!',
-        usuario: {
-          id: usuario.id,
-          nome: usuario.nome,
-          email: usuario.email,
-          idade: usuario.idade,
-          fazendas: fazendas.map((f: any) => ({
-            id: f.id,
-            nome: f.nome,
-            localizacao: f.localizacao,
-            areaValue: f.areaValue || 0,
-            areaUnit: f.areaUnit || 'ha',
-            cattleCapacity: f.cattleCapacity || 0,
-            geojson: f.geojson || null
-          }))
-        },
-      });
-    } catch (error) {
-      console.error('Erro no login do usuário:', error);
-      return reply.status(500).send({ erro: 'Erro interno ao autenticar.' });
-    }
-  });
-
-  app.post('/api/usuarios/registrar', async (request, reply) => {
-    const { nome, email, idade, senha, nomeFazenda, localizacao, capacidadeGado, areaValue, areaUnit } = request.body as any;
-
-    if (!nome || !email || !idade || !senha || !nomeFazenda || !localizacao) {
-      return reply.status(400).send({ erro: 'Todos os campos são obrigatórios.' });
-    }
-
-    try {
-      const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
-      if (usuarioExistente) {
-        return reply.status(400).send({ erro: 'Este e-mail já está cadastrado.' });
-      }
-
-      const novoUsuario = await prisma.usuario.create({
-        data: {
-          nome,
-          email,
-          idade: Number(idade),
-          senhaHash: senha
-        }
-      });
-
-      const novaFazenda = await (prisma.fazenda as any).create({
-        data: {
-          nome: nomeFazenda,
-          localizacao,
-          areaValue: Number(areaValue) || 0,
-          areaUnit: areaUnit || 'ha',
-          cattleCapacity: Number(capacidadeGado) || 0,
-          usuarioId: novoUsuario.id
-        }
-      });
-
-      return reply.status(201).send({
-        sucesso: true,
-        mensagem: 'Usuário e Fazenda cadastrados com sucesso!',
-        usuarioId: novoUsuario.id,
-        fazendaId: novaFazenda.id,
-        usuario: {
-          id: novoUsuario.id,
-          nome: novoUsuario.nome,
-          email: novoUsuario.email,
-          idade: novoUsuario.idade,
-          fazendas: [novaFazenda]
-        }
-      });
-    } catch (error) {
-      console.error('Erro no registro do usuário:', error);
-      return reply.status(500).send({ erro: 'Erro interno ao salvar registro.' });
-    }
-  });
-
+  // ROTA: Registrar Comprador / Frigorífico (com Localização)
   app.post('/api/consumidores/registrar', async (request, reply) => {
-    const { nome, email, empresa, senha } = request.body as any;
+    const { nome, email, empresa, senha, localizacao } = request.body as any;
 
     if (!nome || !email || !empresa || !senha) {
       return reply.status(400).send({ erro: 'Todos os campos são obrigatórios.' });
@@ -620,7 +575,13 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
       }
 
       const novoConsumidor = await prisma.consumidor.create({
-        data: { nome, email, empresa, senhaHash: senha }
+        data: { 
+          nome, 
+          email, 
+          empresa, 
+          senhaHash: senha,
+          localizacao: localizacao || 'Não informada'
+        }
       });
 
       return reply.status(201).send({
@@ -655,6 +616,7 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
           nome: consumidor.nome,
           empresa: consumidor.empresa,
           email: consumidor.email,
+          localizacao: consumidor.localizacao
         },
       });
     } catch (error) {
@@ -663,6 +625,7 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
     }
   });
 
+  // DEMAIS ROTAS EXISTENTES
   app.get('/api/lotes/disponiveis', async (request, reply) => {
     try {
       const lotes = await prisma.lote.findMany({
@@ -952,7 +915,6 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
     }
   });
 
-  // ROTA: Confirmar Proposta SEM Sobrescrever a Leitura Original da IA
   app.put('/api/lotes/:id/confirmar-negociacao', async (request, reply) => {
     const { id } = request.params as { id: string };
     const { quantidadeCabecas, valorTotal } = request.body as any;
@@ -1161,7 +1123,51 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
     }
   });
 
-  // Nova rota para o Chat Copilot
+  // ROTA: Salvar Vídeo na Galeria / Registrar Lote no Banco de Dados
+  app.post('/api/videos/salvar-galeria', async (request, reply) => {
+    const {
+      fazendaId,
+      pastoId,
+      quantidadeCabecas,
+      totalCabecas,
+      valorTotal,
+      videoOriginalUrl,
+      videoOriginalBase64,
+      videoProcessadoUrl,
+      status
+    } = request.body as any;
+
+    if (!fazendaId) {
+      return reply.status(400).send({ erro: 'O parâmetro fazendaId é obrigatório.' });
+    }
+
+    try {
+      const qtdCabecas = Number(quantidadeCabecas || totalCabecas || 0);
+
+      const novoLote = await prisma.lote.create({
+        data: {
+          fazendaId,
+          pastoId: pastoId || null,
+          quantidadeCabecas: qtdCabecas,
+          valorTotal: Number(valorTotal) || 0,
+          videoOriginalUrl: videoOriginalUrl || videoOriginalBase64 || null,
+          videoProcessadoUrl: videoProcessadoUrl || null,
+          status: status || 'DISPONIVEL'
+        }
+      });
+
+      return reply.status(201).send({
+        sucesso: true,
+        mensagem: 'Vídeo salvo na galeria e lote registrado com sucesso!',
+        lote: novoLote
+      });
+    } catch (error) {
+      console.error('Erro ao salvar vídeo na galeria:', error);
+      return reply.status(500).send({ erro: 'Falha ao salvar vídeo na galeria.' });
+    }
+  });
+
+  // ROTA: Chat Copilot
   app.post('/api/chat/copilot', async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       const body = req.body as any;
@@ -1175,4 +1181,5 @@ app.get('/api/videos/minha-fazenda', async (request, reply) => {
       });
     }
   });
+
 }

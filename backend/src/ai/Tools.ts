@@ -1,4 +1,3 @@
-// src/ai/tools.ts
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
 
 export const chatTools: ChatCompletionTool[] = [
@@ -27,6 +26,48 @@ export const chatTools: ChatCompletionTool[] = [
   },
 
   // --- TOOLS DO CONSUMIDOR / COMPRADOR ---
+  {
+    type: 'function',
+    function: {
+      name: 'filtrarMapaFazendas',
+      description: 'OBRIGATÓRIO: Execute esta função SEMPRE que o usuário/comprador pedir para visualizar, filtrar, buscar ou ver fazendas por raio de distância em km (ex: "10km de mim", "a 50 km") ou por cidade no mapa.',
+      parameters: {
+        type: 'object',
+        properties: {
+          distanciaKm: { 
+            type: 'number', 
+            description: 'Distância máxima em quilômetros extraída da mensagem do usuário (ex: 10, 20, 50).' 
+          },
+          cidade: { 
+            type: 'string', 
+            description: 'Nome da cidade mencionada pelo usuário para filtrar (ex: Araraquara, Ribeirão Preto).' 
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'tracarRotaFazendaMaisProxima',
+      description: 'OBRIGATÓRIO: Execute esta função SEMPRE que o usuário solicitar para traçar a rota, ver o caminho ou selecionar a fazenda mais próxima dele no mapa.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'selecionarFazendaNoMapa',
+      description: 'OBRIGATÓRIO: Execute esta função para selecionar, focar ou traçar rota para uma fazenda específica informada pelo nome.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nomeFazenda: { type: 'string', description: 'Nome ou parte do nome da fazenda a ser selecionada no mapa.' }
+        },
+        required: ['nomeFazenda']
+      }
+    }
+  },
   {
     type: 'function',
     function: {

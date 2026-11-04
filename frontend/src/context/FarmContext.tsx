@@ -12,16 +12,22 @@ export interface Farm {
   areaUnit: AreaUnit;
   cattleCapacity: number;
   isActive: boolean;
-  geojson?: string | null; // Persistência da geometria digitalizada
+  geojson?: string | null;
 }
 
 export interface UserSession {
   id: string;
   nome: string;
   empresa?: string;
+  localizacao?: string;
   tipo?: 'produtor' | 'comprador';
   fazenda?: any;
   fazendas?: any[];
+}
+
+export interface ComandoMapa {
+  tipo: 'ROTA_MAIS_PROXIMA' | 'SELECIONAR_FAZENDA';
+  fazendaNome?: string;
 }
 
 export type OmittedFarmInput = Omit<Farm, 'id' | 'isActive'>;
@@ -32,6 +38,12 @@ interface FarmContextType {
   userName: string;
   userId: string | null;
   userSession: UserSession | null;
+  filtroCidade: string;
+  filtroDistancia: string;
+  comandoMapa: ComandoMapa | null;
+  setFiltroCidade: (cidade: string) => void;
+  setFiltroDistancia: (distancia: string) => void;
+  setComandoMapa: (comando: ComandoMapa | null) => void;
   setUserSession: (user: any) => void;
   logout: () => void;
   setActiveFarmById: (id: string) => void;
@@ -58,6 +70,11 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userName, setUserName] = useState<string>(() => localStorage.getItem('@AgroIntelli:userName') || 'Produtor');
   const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('@AgroIntelli:userId') || null);
 
+  // Estados compartilhados de filtragem e comandos do mapa
+  const [filtroCidade, setFiltroCidade] = useState<string>('');
+  const [filtroDistancia, setFiltroDistancia] = useState<string>('');
+  const [comandoMapa, setComandoMapa] = useState<ComandoMapa | null>(null);
+
   const [userSession, setUserSessionState] = useState<UserSession | null>(() => {
     const saved = localStorage.getItem('@AgroIntelli:userSession');
     if (saved) {
@@ -76,7 +93,6 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const activeFarm = userFarms.find((f) => f.isActive) || userFarms[0] || defaultFarm;
 
-  // Reidratação automática mantendo o geojson retornado pelo banco
   useEffect(() => {
     const currentUserId = userId || localStorage.getItem('@AgroIntelli:userId');
 
@@ -121,6 +137,8 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const sessionObj: UserSession = {
       id: extractedId,
       nome: extractedName,
+      empresa: userData?.empresa,
+      localizacao: userData?.localizacao,
       tipo: userData?.tipo,
       fazenda: userData?.fazenda,
       fazendas: userData?.fazendas
@@ -247,7 +265,25 @@ export const FarmProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <FarmContext.Provider value={{ activeFarm, userFarms, userName, userId, userSession, setUserSession, logout, setActiveFarmById, updateActiveFarm, addNewFarm, formatAreaText }}>
+    <FarmContext.Provider value={{ 
+      activeFarm, 
+      userFarms, 
+      userName, 
+      userId, 
+      userSession, 
+      filtroCidade,
+      filtroDistancia,
+      comandoMapa,
+      setFiltroCidade,
+      setFiltroDistancia,
+      setComandoMapa,
+      setUserSession, 
+      logout, 
+      setActiveFarmById, 
+      updateActiveFarm, 
+      addNewFarm, 
+      formatAreaText 
+    }}>
       {children}
     </FarmContext.Provider>
   );

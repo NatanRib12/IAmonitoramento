@@ -54,7 +54,7 @@ model Fazenda {
 model Pasto {
   id          String   @id @default(uuid())
   nome        String
-  geojson     String?  @db.Text // Armazena as coordenadas do polígono em JSON
+  geojson     String?  @db.Text
   
   fazendaId   String
   fazenda     Fazenda  @relation(fields: [fazendaId], references: [id], onDelete: Cascade)
@@ -88,15 +88,16 @@ model Lote {
 }
 
 model Consumidor {
-  id        String        @id @default(uuid())
-  nome      String
-  email     String        @unique
-  empresa   String   
-  senhaHash String
+  id          String        @id @default(uuid())
+  nome        String
+  email       String        @unique
+  empresa     String   
+  senhaHash   String
+  localizacao String        @default("Não informada")
   
-  alertas   AlertaRadar[]
-  chamados  Chamado[]
-  createdAt DateTime      @default(now())
+  alertas     AlertaRadar[]
+  chamados    Chamado[]
+  createdAt   DateTime      @default(now())
 }
 
 model AlertaRadar {
@@ -105,7 +106,6 @@ model AlertaRadar {
   quantidadeDesejada Int
   createdAt          DateTime   @default(now())
 
-  // Vinculo exclusivo com o Consumidor (Comprador)
   consumidorId       String
   consumidor         Consumidor @relation(fields: [consumidorId], references: [id], onDelete: Cascade)
 }

@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   Search, 
   Radar, 
+  MapPin,
   BookmarkCheck, 
   CheckCircle2, 
   HelpCircle,
@@ -67,17 +68,31 @@ export const SideMenuConsumer: React.FC<SideMenuConsumerProps> = ({
               <p className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                 Oportunidades
               </p>
-              <button
-                onClick={() => onNavigate('radar-alertas')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                  activeSubSection === 'radar-alertas'
-                    ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <Radar className={`w-4 h-4 ${activeSubSection === 'radar-alertas' ? 'text-emerald-600' : 'text-slate-400'}`} />
-                Radar de Alertas
-              </button>
+              <div className="space-y-1">
+                <button
+                  onClick={() => onNavigate('radar-alertas')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                    activeSubSection === 'radar-alertas'
+                      ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <Radar className={`w-4 h-4 ${activeSubSection === 'radar-alertas' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  Radar de Alertas
+                </button>
+
+                <button
+                  onClick={() => onNavigate('close-farms')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                    activeSubSection === 'close-farms'
+                      ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600 rounded-l-none'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <MapPin className={`w-4 h-4 ${activeSubSection === 'close-farms' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  Fazendas Próximas
+                </button>
+              </div>
             </div>
 
             {/* COMPRAS E RESERVAS DE LOTE */}

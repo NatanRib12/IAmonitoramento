@@ -26,6 +26,7 @@ import { PreviousPurchases } from './pages/Consumer/PreviousPurchases';
 import { ReservedLots } from './pages/Consumer/ReservedLots';
 import { SupportCenterConsumer } from './pages/Consumer/SupportCenterConsumer';
 import { FarmAnalysisConsumer } from './pages/Consumer/FarmAnalysisConsumer';
+import { CloseFarms } from './pages/Consumer/CloseFarms';
 
 // Widget do Chat
 import AgroIntelliChatWidget from './components/Chat';
@@ -133,6 +134,7 @@ function AppContent() {
             {subSectionConsumer === 'radar-alertas' && <AlertsConsumer />}
             {subSectionConsumer === 'compras-anteriores' && <PreviousPurchases />}
             {subSectionConsumer === 'reservas-lotes' && <ReservedLots />}
+            {subSectionConsumer === 'close-farms' && <CloseFarms />}
             {subSectionConsumer === 'central-suporte' && <SupportCenterConsumer />}
             {subSectionConsumer === 'analise-fazenda' && <FarmAnalysisConsumer />}
           </SideMenuConsumer>

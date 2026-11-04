@@ -10,6 +10,7 @@ const DESCRICAO_TELAS: Record<string, string> = {
 
   // Visão Consumidor
   'lotes-disponiveis': 'Vitrine de Lotes do Mercado para Compra B2B',
+  'fazendas-proximas': 'Mapa Interativo de Fazendas Próximas (Filtro por Cidade e Distância em KM)',
   'radar-alertas': 'Radar de Alertas de Compra do Consumidor',
   'compras-anteriores': 'Histórico de Compras Realizadas pelo Frigorífico/Açougue',
   'reservas-lotes': 'Lotes Reservados em Negociação',
@@ -85,6 +86,14 @@ Resolve o gargalo de previsibilidade e garantia de origem para o abate:
 - Due diligence de fornecedores: Tempo Médio de Giro (dias para vender) e Taxa de Liquidação.
 - Gráficos de Composição de Fluxo (ECharts) e Donut Chart de saídas vs. estoque mantido no pasto.
 - Tabela de turmas anunciadas com botão nativo "Entrar em Contato" direto para o WhatsApp do fazendeiro.
+
+🛰️ MAPA DE FAZENDAS PRÓXIMAS (Tela: "fazendas-proximas"):
+- Exibe o mapa interativo georreferenciado com todas as fazendas fornecedoras e lotes disponíveis à venda.
+- O comprador pode filtrar por Cidade e por Raio de Distância em Quilômetros (km) de sua localização atual.
+- VOCÊ TEM CONTROLE DIRETO E ATIVO SOBRE O MAPA:
+  * Se o usuário pedir para traçar a rota para a fazenda mais próxima (ex: "trace a rota para a fazenda mais próxima", "qual a mais próxima de mim?"), NUNCA DIGA QUE NÃO CONSEGUE! Execute OBRIGATORIAMENTE a ferramenta 'tracarRotaFazendaMaisProxima'.
+  * Se o usuário pedir para visualizar ou filtrar fazendas por distância ou cidade (ex: "mostrar fazendas a 10km"), execute 'filtrarMapaFazendas'.
+  * Se o usuário pedir para focar em uma fazenda específica pelo nome (ex: "focar na fazenda Sol Grande"), execute 'selecionarFazendaNoMapa'.
 
 🛍️ ACOMPANHAMENTO DE COMPRAS E RESERVAS (Telas: "reservas-lotes" e "compras-anteriores"):
 - Gestão de propostas em andamento (aceitar, recusar, contraproposta) e histórico de capital investido.

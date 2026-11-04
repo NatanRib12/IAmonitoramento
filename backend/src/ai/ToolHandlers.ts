@@ -1,4 +1,3 @@
-// src/ai/toolHandlers.ts
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -8,7 +7,6 @@ const MESES_NOMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ];
 
-// Funções auxiliares de formatação para evitar bugs de tabela na LLM
 function formatarData(data: Date): string {
   const d = new Date(data);
   const dia = String(d.getDate()).padStart(2, '0');
@@ -31,12 +29,45 @@ function formatarMoeda(valor: number): string {
 export async function executarTool(nomeFuncao: string, args: any, contexto: any) {
   const userIdOuFazendaId = contexto.fazendaId || contexto.entityId;
   const consumidorId = contexto.consumidorId || contexto.entityId;
-  const entidadeAtiva = contexto.entidadeAtiva;
 
   switch (nomeFuncao) {
-    // =========================================================================
-    // 1. PRODUTOR: Resumo de Vendas e Fluxo
-    // =========================================================================
+    case 'filtrarMapaFazendas': {
+      const { distanciaKm, cidade } = args;
+
+      const fazendas = await prisma.fazenda.findMany({
+        where: cidade ? { localizacao: { contains: String(cidade), mode: 'insensitive' } } : {},
+        include: {
+          lotes: { where: { status: 'DISPONIVEL' }, select: { quantidadeCabecas: true } }
+        }
+      });
+
+      return {
+        acaoExecutada: 'FILTRAR_MAPA',
+        parametros: {
+          distanciaKm: distanciaKm ? Number(distanciaKm) : null,
+          cidade: cidade ? String(cidade) : null
+        },
+        totalFazendasBanco: fazendas.length,
+        mensagem: `Filtro do mapa atualizado com sucesso. ${distanciaKm ? `Distância máxima: ${distanciaKm} km.` : ''} ${cidade ? `Cidade: ${cidade}.` : ''}`
+      };
+    }
+
+    case 'tracarRotaFazendaMaisProxima': {
+      return {
+        acaoExecutada: 'ROTA_MAIS_PROXIMA',
+        mensagem: 'Rota para a fazenda mais próxima traçada no mapa com sucesso.'
+      };
+    }
+
+    case 'selecionarFazendaNoMapa': {
+      const { nomeFazenda } = args;
+      return {
+        acaoExecutada: 'SELECIONAR_FAZENDA',
+        parametros: { nomeFazenda: nomeFazenda ? String(nomeFazenda) : null },
+        mensagem: `Fazenda "${nomeFazenda || ''}" focada e selecionada no mapa com sucesso.`
+      };
+    }
+
     case 'obterResumoVendasEFluxo': {
       const anoConsulta = Number(args.ano) || 2026;
       const mesConsulta = args.mes ? Number(args.mes) : null;
@@ -122,9 +153,6 @@ export async function executarTool(nomeFuncao: string, args: any, contexto: any)
       };
     }
 
-    // =========================================================================
-    // 2. CONSUMIDOR: Vitrine de Lotes Disponíveis no Mercado
-    // =========================================================================
     case 'obterLotesDisponiveisMercado': {
       const { regiao, quantidadeMinima } = args;
 
@@ -163,9 +191,6 @@ export async function executarTool(nomeFuncao: string, args: any, contexto: any)
       };
     }
 
-    // =========================================================================
-    // 3. CONSUMIDOR: Radar de Alertas
-    // =========================================================================
     case 'obterAlertasConsumidor': {
       let consumidor = null;
       if (consumidorId) {
@@ -197,9 +222,6 @@ export async function executarTool(nomeFuncao: string, args: any, contexto: any)
       };
     }
 
-    // =========================================================================
-    // 4. CONSUMIDOR: Histórico de Compras Efetuadas
-    // =========================================================================
     case 'obterHistoricoComprasConsumidor': {
       let consumidor = null;
       if (consumidorId) {
@@ -247,9 +269,6 @@ export async function executarTool(nomeFuncao: string, args: any, contexto: any)
       };
     }
 
-    // =========================================================================
-    // 5. CONSUMIDOR: Análise da Fazenda Fornecedora
-    // =========================================================================
     case 'obterAnaliseFazendaFornecedora': {
       const { nomeFazenda } = args;
 

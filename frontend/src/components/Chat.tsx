@@ -1,7 +1,7 @@
-// src/components/Chat.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageSquare, X, Send, Bot, Loader2, Sparkles, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { useFarm } from '../context/FarmContext';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -18,6 +18,12 @@ interface AgroIntelliChatWidgetProps {
 const TAMANHO_PADRAO = { width: 480, height: 620 };
 
 const SUGESTOES_POR_TELA: Record<string, string[]> = {
+  'fazendas-proximas': [
+    'Consegue traçar uma rota para a fazenda mais próxima de mim?',
+    'Me mostre fazendas em uma distância de 10km de mim',
+    'Filtrar fazendas na região de Araraquara',
+    'Quais propriedades têm gado disponível à venda?'
+  ],
   'grafico-analise': [
     'Qual foi o faturamento total em Outubro de 2026?',
     'Quantas cabeças restam no pasto?',
@@ -63,19 +69,19 @@ export default function AgroIntelliChatWidget({
   telaAtual,
   entidadeAtiva
 }: AgroIntelliChatWidgetProps) {
+  const { setFiltroCidade, setFiltroDistancia, setComandoMapa } = useFarm();
+
   const [isOpen, setIsOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // Estado para redimensionamento dinâmico
   const [size, setSize] = useState(TAMANHO_PADRAO);
   const [isResizing, setIsResizing] = useState(false);
   
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
 
-  // Reseta o tamanho para o padrão sempre que o chat for fechado
   useEffect(() => {
     if (!isOpen) {
       setSize(TAMANHO_PADRAO);
@@ -88,7 +94,6 @@ export default function AgroIntelliChatWidget({
     }
   }, [messages, isOpen]);
 
-  // Lógica de Redimensionamento via Arraste (Canto Superior Esquerdo)
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
@@ -161,13 +166,34 @@ export default function AgroIntelliChatWidget({
 
       const data = await response.json();
 
-      if (data.resposta) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.resposta }]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: 'Desculpe, ocorreu uma falha ao processar a solicitação.' }
-        ]);
+      // Extração defensiva garantindo que apenas texto vai para a propriedade content
+      const textoMensagem = typeof data.resposta === 'string'
+        ? data.resposta
+        : (typeof data.resposta?.resposta === 'string'
+            ? data.resposta.resposta
+            : 'Resposta recebida do assistente.');
+
+      setMessages((prev) => [...prev, { role: 'assistant', content: textoMensagem }]);
+
+      // Processamento das ações no Mapa enviadas pelo backend
+      const acaoObj = data.acao || data.resposta?.acao;
+      if (acaoObj) {
+        if (acaoObj.tipo === 'FILTRAR_MAPA') {
+          const { cidade, distanciaKm } = acaoObj.parametros || {};
+          if (cidade !== undefined) {
+            setFiltroCidade(cidade || '');
+          }
+          if (distanciaKm !== undefined) {
+            setFiltroDistancia(distanciaKm ? String(distanciaKm) : '');
+          }
+        } else if (acaoObj.tipo === 'ROTA_MAIS_PROXIMA') {
+          setComandoMapa({ tipo: 'ROTA_MAIS_PROXIMA' });
+        } else if (acaoObj.tipo === 'SELECIONAR_FAZENDA') {
+          setComandoMapa({ 
+            tipo: 'SELECIONAR_FAZENDA', 
+            fazendaNome: acaoObj.parametros?.nomeFazenda 
+          });
+        }
       }
     } catch (error) {
       console.error('Erro no chat:', error);
@@ -186,13 +212,12 @@ export default function AgroIntelliChatWidget({
   ];
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end font-sans">
+    <div className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end font-sans">
       {isOpen && (
         <div
           style={{ width: `${size.width}px`, height: `${size.height}px` }}
           className="mb-4 rounded-2xl bg-white shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-75 relative select-none"
         >
-          {/* ALÇA DE REDIMENSIONAMENTO (Canto Superior Esquerdo) */}
           <div
             onMouseDown={startResizing}
             title="Arraste para redimensionar o chat"
@@ -201,7 +226,6 @@ export default function AgroIntelliChatWidget({
             <div className="w-2 h-2 border-t-2 border-l-2 border-slate-400 group-hover:border-emerald-400 transition-colors" />
           </div>
 
-          {/* Cabeçalho */}
           <div className="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800 shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-emerald-500 rounded-xl text-slate-950 font-bold">
@@ -216,7 +240,6 @@ export default function AgroIntelliChatWidget({
             </div>
 
             <div className="flex items-center gap-1">
-              {/* BOTÃO DE RESETAR TAMANHO */}
               <button
                 onClick={handleResetSize}
                 title="Restaurar tamanho padrão"
@@ -225,7 +248,6 @@ export default function AgroIntelliChatWidget({
                 <RotateCcw size={16} />
               </button>
 
-              {/* BOTÃO DE FECHAR */}
               <button
                 onClick={() => setIsOpen(false)}
                 className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
@@ -235,7 +257,6 @@ export default function AgroIntelliChatWidget({
             </div>
           </div>
 
-          {/* Histórico de Mensagens */}
           <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/50">
             {messages.length === 0 && (
               <div className="text-center my-auto py-6 px-2 flex flex-col items-center justify-center h-full">
@@ -248,7 +269,7 @@ export default function AgroIntelliChatWidget({
                 <p className="text-xs text-slate-500 leading-relaxed mb-4">
                   {perfil === 'PRODUTOR'
                     ? 'Tire dúvidas sobre a AgroIntelli, auditoria por drones, vendas de lotes e pastos.'
-                    : 'Tire dúvidas sobre a vitrine de lotes, radar de alertas e análise de fornecedores.'}
+                    : 'Tire dúvidas sobre a vitrine de lotes, mapa de fazendas próximas e fornecedores.'}
                 </p>
 
                 <div className="flex flex-col gap-1.5 w-full">
@@ -278,7 +299,9 @@ export default function AgroIntelliChatWidget({
                 >
                   {msg.role === 'assistant' ? (
                     <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed overflow-x-auto">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      <ReactMarkdown>
+                        {typeof msg.content === 'string' ? msg.content : String(msg.content || '')}
+                      </ReactMarkdown>
                     </div>
                   ) : (
                     msg.content
@@ -298,7 +321,6 @@ export default function AgroIntelliChatWidget({
             <div ref={chatBottomRef} />
           </div>
 
-          {/* Input de Envio */}
           <form onSubmit={handleSendMessage} className="p-3 bg-white border-t border-slate-100 flex gap-2 shrink-0">
             <input
               type="text"
@@ -318,7 +340,6 @@ export default function AgroIntelliChatWidget({
         </div>
       )}
 
-      {/* Botão Flutuante */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl hover:bg-emerald-500 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer"

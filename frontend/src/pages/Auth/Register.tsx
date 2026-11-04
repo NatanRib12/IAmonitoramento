@@ -16,7 +16,7 @@ import {
   Tractor,
   ShoppingBag,
   FileText,
-  Upload
+  Home
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFarm, type AreaUnit } from '../../context/FarmContext';
@@ -48,9 +48,42 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
 
   // Campos de Comprador
   const [empresa, setEmpresa] = useState('');
+  const [cep, setCep] = useState('');
+  const [logradouroComprador, setLogradouroComprador] = useState('');
+  const [bairroComprador, setBairroComprador] = useState('');
+  const [localizacaoComprador, setLocalizacaoComprador] = useState('');
+  const [carregandoCep, setCarregandoCep] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  // Consulta de CEP via API ViaCEP (Autopreenchimento)
+  const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valor = e.target.value;
+    setCep(valor);
+
+    const cepLimpo = valor.replace(/\D/g, '');
+
+    if (cepLimpo.length === 8) {
+      setCarregandoCep(true);
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+        const data = await res.json();
+
+        if (!data.erro) {
+          setLocalizacaoComprador(`${data.localidade} - ${data.uf}`);
+          if (data.logradouro) setLogradouroComprador(data.logradouro);
+          if (data.bairro) setBairroComprador(data.bairro);
+        } else {
+          setErro('CEP não encontrado. Por favor, digite os dados do endereço manualmente.');
+        }
+      } catch (err) {
+        console.error('Erro ao consultar CEP:', err);
+      } finally {
+        setCarregandoCep(false);
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,12 +104,12 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           areaUnit
         };
 
-        // 1. Cria Usuário e Fazenda
+        // 1. Cria Usuário Produtor e Fazenda principal
         const res = await api.post('/api/usuarios/registrar', payload);
         const userId = res.data?.usuarioId || res.data?.usuario?.id;
         const realFazendaId = res.data?.fazendaId || res.data?.usuario?.fazendas?.[0]?.id;
 
-        // 2. Se o produtor anexou um arquivo KML, envia imediatamente após a criação da fazenda
+        // 2. Se anexou arquivo KML, envia para importação de pastos
         if (kmlFile && realFazendaId) {
           try {
             const formData = new FormData();
@@ -87,11 +120,10 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
             });
           } catch (kmlErr) {
             console.error('Erro ao enviar KML durante o cadastro:', kmlErr);
-            // Prossegue com o fluxo de login de modo que o usuário consiga acessar mesmo se o KML falhar
           }
         }
 
-        // 3. Define a sessão do produtor com a fazenda cadastrada
+        // 3. Define a sessão do produtor
         setUserSession({
           id: userId,
           nome,
@@ -109,11 +141,18 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
         localStorage.setItem('@AgroIntelli:userId', userId);
 
       } else {
+        const enderecoCompleto = [
+          logradouroComprador,
+          bairroComprador,
+          localizacaoComprador
+        ].filter(Boolean).join(', ');
+
         const payload = {
           nome,
           email,
           empresa,
-          senha
+          senha,
+          localizacao: enderecoCompleto || localizacaoComprador
         };
 
         const res = await api.post('/api/consumidores/registrar', payload);
@@ -360,7 +399,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                   </div>
                 </div>
 
-                {/* NOVO CAMPO: UPLOAD DE KML DO TERRENO */}
                 <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
@@ -396,70 +434,143 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                 Informações da Empresa / Frigorífico
               </span>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nome do Responsável *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                    placeholder="Ex.: Carlos Eduardo"
-                    required
-                    className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  />
-                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nome do Responsável *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={nome}
+                      onChange={(e) => setNome(e.target.value)}
+                      placeholder="Ex.: Carlos Eduardo"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nome da Empresa ou Frigorífico *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={empresa}
+                      onChange={(e) => setEmpresa(e.target.value)}
+                      placeholder="Ex.: Frigorífico Santa Fé"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nome da Empresa ou Frigorífico *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={empresa}
-                    onChange={(e) => setEmpresa(e.target.value)}
-                    placeholder="Ex.: Frigorífico Santa Fé"
-                    required
-                    className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  />
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              {/* ENDEREÇO E LOCALIZAÇÃO DO COMPRADOR */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">CEP *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      maxLength={9}
+                      value={cep}
+                      onChange={handleCepChange}
+                      placeholder="Ex.: 14780-000"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 pr-8 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    {carregandoCep && (
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-600 absolute right-3 top-1/2 -translate-y-1/2" />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Logradouro / Rua *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={logradouroComprador}
+                      onChange={(e) => setLogradouroComprador(e.target.value)}
+                      placeholder="Ex.: Av. dos Pecuários, 1500"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <Home className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">E-mail Corporativo *</label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="compras@empresa.com"
-                    required
-                    className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  />
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Bairro *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={bairroComprador}
+                      onChange={(e) => setBairroComprador(e.target.value)}
+                      placeholder="Ex.: Distrito Industrial"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Localização (Cidade - UF) *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={localizacaoComprador}
+                      onChange={(e) => setLocalizacaoComprador(e.target.value)}
+                      placeholder="Ex.: Barretos - SP"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Senha *</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full px-3.5 py-2.5 pl-10 pr-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  />
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">E-mail Corporativo *</label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="compras@empresa.com"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Senha *</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-3.5 py-2.5 pl-10 pr-10 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
