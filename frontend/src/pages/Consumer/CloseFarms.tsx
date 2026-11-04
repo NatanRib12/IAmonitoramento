@@ -134,6 +134,33 @@ async function geocodeAddress(address: string): Promise<[number, number] | null>
   return null;
 }
 
+function MapResizeHandler({ isSidebarOpen }: { isSidebarOpen: boolean }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 350);
+    };
+
+    map.on('zoomend', handleResize);
+    map.on('resize', handleResize);
+    window.addEventListener('resize', handleResize);
+
+    handleResize();
+
+    return () => {
+      map.off('zoomend', handleResize);
+      map.off('resize', handleResize);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [map, isSidebarOpen]);
+
+  return null;
+}
+
 function MapFocus({ center }: { center: [number, number] }) {
   const map = useMap();
   useEffect(() => {
@@ -449,7 +476,7 @@ export function CloseFarms() {
         )}
       </aside>
 
-      <main className="flex-1 relative h-full w-full bg-slate-100">
+      <main className="flex-1 min-w-0 relative h-full w-full bg-slate-100">
         
         {/* FILTROS EXPOSTOS (CONECTADOS AO CONTEXTO COMPARTILHADO COM A IA) */}
         <div className="absolute top-4 left-4 z-[1000] flex items-center gap-2.5 flex-wrap">
@@ -506,8 +533,11 @@ export function CloseFarms() {
           center={mapCenter}
           zoom={9}
           className="h-full w-full z-0"
+          style={{ width: '100%', height: '100%' }}
           zoomControl={false}
         >
+          <MapResizeHandler isSidebarOpen={isSidebarOpen} />
+
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
