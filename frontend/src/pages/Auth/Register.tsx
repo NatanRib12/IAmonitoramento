@@ -1,3 +1,5 @@
+// src/components/Register.tsx
+
 import React, { useState } from 'react';
 import { 
   Eye, 
@@ -57,7 +59,7 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Consulta de CEP via API ViaCEP (Autopreenchimento)
+  // Consulta de CEP via API ViaCEP
   const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const valor = e.target.value;
     setCep(valor);
@@ -104,12 +106,10 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           areaUnit
         };
 
-        // 1. Cria Usuário Produtor e Fazenda principal
         const res = await api.post('/api/usuarios/registrar', payload);
         const userId = res.data?.usuarioId || res.data?.usuario?.id;
         const realFazendaId = res.data?.fazendaId || res.data?.usuario?.fazendas?.[0]?.id;
 
-        // 2. Se anexou arquivo KML, envia para importação de pastos
         if (kmlFile && realFazendaId) {
           try {
             const formData = new FormData();
@@ -123,11 +123,11 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           }
         }
 
-        // 3. Define a sessão do produtor
         setUserSession({
           id: userId,
           nome,
           tipo: 'produtor',
+          localizacao,
           fazenda: {
             id: realFazendaId || `farm-${Date.now()}`,
             nome: nomeFazenda,
@@ -152,17 +152,19 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           email,
           empresa,
           senha,
-          localizacao: enderecoCompleto || localizacaoComprador
+          localizacao: enderecoCompleto || localizacaoComprador || cep
         };
 
         const res = await api.post('/api/consumidores/registrar', payload);
         const buyerId = res.data?.consumidorId || res.data?.id;
 
+        // CORREÇÃO: Incluída a localização na sessão do comprador
         setUserSession({
           id: buyerId,
           nome,
           empresa,
-          tipo: 'comprador'
+          tipo: 'comprador',
+          localizacao: payload.localizacao
         });
         localStorage.setItem('@AgroIntelli:userType', 'comprador');
         localStorage.setItem('@AgroIntelli:userId', buyerId);
@@ -195,7 +197,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
           <p className="text-xs text-slate-500 font-semibold mt-1">Selecione o tipo de perfil e preencha os dados abaixo</p>
         </div>
 
-        {/* Alternador de Perfil */}
         <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 mb-6">
           <button
             type="button"
@@ -232,8 +233,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* CAMPOS DE PRODUTOR */}
           {tipoPerfil === 'produtor' ? (
             <>
               <div className="space-y-3">
@@ -428,7 +427,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
               </div>
             </>
           ) : (
-            /* CAMPOS DE COMPRADOR */
             <div className="space-y-3">
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md inline-block">
                 Informações da Empresa / Frigorífico
@@ -466,7 +464,6 @@ export function Register({ onRegisterSuccess, onNavigateLogin }: RegisterProps) 
                 </div>
               </div>
 
-              {/* ENDEREÇO E LOCALIZAÇÃO DO COMPRADOR */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">CEP *</label>

@@ -15,7 +15,7 @@ interface AgroIntelliChatWidgetProps {
   entidadeAtiva?: { nome?: string; id?: string; tipo?: string };
 }
 
-const TAMANHO_PADRAO = { width: 480, height: 620 };
+const TAMANHO_PADRAO = { width: 380, height: 520 };
 
 const SUGESTOES_POR_TELA: Record<string, string[]> = {
   'fazendas-proximas': [
@@ -112,7 +112,7 @@ export default function AgroIntelliChatWidget({
       const deltaY = resizeRef.current.startY - e.clientY;
 
       const newWidth = Math.max(340, Math.min(950, resizeRef.current.startW + deltaX));
-      const newHeight = Math.max(450, Math.min(900, resizeRef.current.startH + deltaY));
+      const newHeight = Math.max(560, Math.min(900, resizeRef.current.startH + deltaY));
 
       setSize({ width: newWidth, height: newHeight });
     };

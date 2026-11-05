@@ -1,3 +1,5 @@
+// src/components/CloseFarms.tsx
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -118,19 +120,34 @@ function getGeoJsonCenter(geoJsonInput: any): [number, number] | null {
   }
 }
 
+// Geocodificação resiliente com fallback (Endereço Completo -> Cidade/UF)
 async function geocodeAddress(address: string): Promise<[number, number] | null> {
   if (!address || address.trim() === '' || address === 'Não informada') return null;
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
-    );
-    const data = await res.json();
-    if (data && data.length > 0) {
-      return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  
+  const searchTerms: string[] = [address];
+
+  if (address.includes(',')) {
+    const partes = address.split(',');
+    const cidadeUF = partes[partes.length - 1].trim();
+    if (cidadeUF && !searchTerms.includes(cidadeUF)) {
+      searchTerms.push(cidadeUF);
     }
-  } catch (e) {
-    console.error('Erro ao geocodificar endereço:', e);
   }
+
+  for (const term of searchTerms) {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(term)}&limit=1`
+      );
+      const data = await res.json();
+      if (data && data.length > 0) {
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      }
+    } catch (e) {
+      console.error('Erro ao geocodificar termo:', term, e);
+    }
+  }
+
   return null;
 }
 
@@ -198,13 +215,29 @@ export function CloseFarms() {
     async function loadMapData() {
       setLoading(true);
 
-      const localConsumidor = userSession?.localizacao || 'Ribeirão Preto - SP';
-      setConsumidorEndereco(localConsumidor);
+      let localConsumidor = userSession?.localizacao;
 
-      const coordsConsumidor = await geocodeAddress(localConsumidor);
-      if (coordsConsumidor) {
-        setConsumidorLocation(coordsConsumidor);
-        setMapCenter(coordsConsumidor);
+      // Se a localização não estiver no userSession, busca via API
+      if ((!localConsumidor || localConsumidor === 'Não informada') && userSession?.id && userSession?.tipo === 'comprador') {
+        try {
+          const resCons = await api.get(`/api/consumidores/${userSession.id}`);
+          if (resCons.data?.localizacao) {
+            localConsumidor = resCons.data.localizacao;
+          }
+        } catch (e) {
+          console.error('Erro ao buscar dados do consumidor:', e);
+        }
+      }
+
+      const enderecoExibicao = localConsumidor || 'Não informada';
+      setConsumidorEndereco(enderecoExibicao);
+
+      if (localConsumidor) {
+        const coordsConsumidor = await geocodeAddress(localConsumidor);
+        if (coordsConsumidor) {
+          setConsumidorLocation(coordsConsumidor);
+          setMapCenter(coordsConsumidor);
+        }
       }
 
       try {
@@ -300,7 +333,6 @@ export function CloseFarms() {
     }
   };
 
-  // EXECUTA COMANDOS ENVIADOS PELA IA VIA CONTEXTO
   useEffect(() => {
     if (!comandoMapa || fazendasFiltradas.length === 0) return;
 
@@ -425,10 +457,6 @@ export function CloseFarms() {
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
-                    <span className="flex items-center gap-1">
-                      <Phone className="w-3.5 h-3.5 text-slate-400" />
-                      {fazenda.proprietario.telefone}
-                    </span>
                     <button className="text-emerald-600 font-bold flex items-center gap-1 hover:underline">
                       Traçar Rota <ArrowRight className="w-3 h-3" />
                     </button>
@@ -478,9 +506,7 @@ export function CloseFarms() {
 
       <main className="flex-1 min-w-0 relative h-full w-full bg-slate-100">
         
-        {/* FILTROS EXPOSTOS (CONECTADOS AO CONTEXTO COMPARTILHADO COM A IA) */}
         <div className="absolute top-4 left-4 z-[1000] flex items-center gap-2.5 flex-wrap">
-          
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="bg-white border border-slate-200/90 text-slate-800 p-2.5 rounded-xl shadow-lg hover:bg-slate-50 transition-all flex items-center gap-2 font-bold text-xs cursor-pointer shrink-0"
@@ -526,7 +552,6 @@ export function CloseFarms() {
               </button>
             )}
           </div>
-
         </div>
 
         <MapContainer
